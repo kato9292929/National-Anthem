@@ -35,6 +35,9 @@ npm run sim -- --ticks 200 --every 40 --shock-at 60   # ヘッドレスで市場
 npm run dev:server        # http://localhost:8787
 npm run dev:client        # http://localhost:5173（/api はサーバへプロキシ）
 npm run smoke             # Chromium で M2 の受け入れを確認し artifacts/ に画面を残す
+
+# config 差し替えだけで表示が変わることの確認（ソースは触らない）
+NA_WORLD_CONFIG=path/to/other.config.json npm run smoke
 ```
 
 クライアントの操作: クリックでポインタロック → WASD 移動 / マウス 視点 / Shift 走り / Esc 解除。

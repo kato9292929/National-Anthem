@@ -13,7 +13,11 @@ import { chromium } from 'playwright';
 
 const PORT = process.env.NA_SMOKE_PORT ?? '8799';
 const BASE = `http://127.0.0.1:${PORT}`;
-const config = JSON.parse(readFileSync(new URL('../world/world.config.json', import.meta.url), 'utf8'));
+// NA_WORLD_CONFIG が指定されていれば、サーバと期待値の双方でそれを使う（差し替えの確認用）。
+const configPath = process.env.NA_WORLD_CONFIG
+  ? new URL(process.env.NA_WORLD_CONFIG, `file://${process.cwd()}/`)
+  : new URL('../world/world.config.json', import.meta.url);
+const config = JSON.parse(readFileSync(configPath, 'utf8'));
 const expectedIds = [
   ...config.stall_categories.imports.map((c) => c.id),
   ...config.stall_categories.exports.map((c) => c.id),
@@ -28,7 +32,13 @@ const check = (ok, label, detail = '') => {
 };
 
 const server = spawn(process.execPath, ['packages/server/dist/index.js'], {
-  env: { ...process.env, NA_MARKET_SEED: 'na-smoke-0001', NA_SERVER_PORT: PORT, NA_SERVE_CLIENT: '1' },
+  env: {
+    ...process.env,
+    NA_MARKET_SEED: 'na-smoke-0001',
+    NA_SERVER_PORT: PORT,
+    NA_SERVE_CLIENT: '1',
+    ...(process.env.NA_WORLD_CONFIG ? { NA_WORLD_CONFIG: process.env.NA_WORLD_CONFIG } : {}),
+  },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 server.stdout.setEncoding('utf8');
@@ -148,6 +158,12 @@ try {
   );
 
   check(pageErrors.length === 0, 'ページエラーが無い', pageErrors.join(' | '));
+
+  const hudName = await page.locator('#panel-hud h2').innerText();
+  const expectedName = config.naming.market.confirmed
+    ? config.naming.market.value
+    : `${config.naming.market.value}（未確定）`;
+  check(hudName.includes(expectedName), 'HUD の市場名は config 由来（未確定はラベル付き）', hudName.replace(/\n/g, ' '));
 
   // 確認用に通路の南端から市場全体を撮る。
   await page.evaluate(() => window.__na_debug.moveTo(0, 13));
