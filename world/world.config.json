@@ -1,0 +1,116 @@
+{
+  "$comment": "ナショナルアンセム 世界設定 v0 の機械可読版。正典は docs/world-spec-v0.md。矛盾したらドキュメントが勝つ。",
+  "version": "0",
+  "status": "draft",
+  "setting": {
+    "id": "southern_mesopotamian_trade_city",
+    "summary_ja": "古代メソポタミア南部の交易都市。シュメール人とアッカド人が隣り合って暮らし、二言語の商人名・地理を記録する必要から楔形文字が発達した世界。",
+    "resource_premise_ja": "石・金属・良質な木材を欠く南部が、遠隔地（インダス／エジプト／アナトリア／イラン方面）と交易する。",
+    "fiction": true
+  },
+  "constraints": {
+    "no_reuse": {
+      "source_project": "ancient world",
+      "rule_ja": "ancient world プロジェクトの資産・データ（aw-data）・禁則（生成画像や復元図を使わない等）は流用しない。共有するのは美学のインスピレーションのみ。",
+      "shared": ["aesthetic_inspiration"],
+      "not_shared": ["assets", "aw-data", "content_restrictions"]
+    },
+    "no_invented_proper_nouns_ja": "加藤さん確定まで固有名を推測で埋めない。仮値で通し、未確定ラベル（confirmed: false）を残す。",
+    "participant_model_unchanged_ja": "v0 の参加者モデル（人間／エージェントが同じ板）を変えない。世界設定を重ねるだけ。"
+  },
+  "naming": {
+    "market": { "value": "MARKET_NAME", "confirmed": false, "owner": "kato" },
+    "district": { "value": "DISTRICT_NAME", "confirmed": false, "owner": "kato" },
+    "npc": { "value": "NPC_NAME", "confirmed": false, "owner": "kato" },
+    "stall": { "value": "STALL_NAME", "confirmed": false, "owner": "kato" }
+  },
+  "core_mapping": [
+    {
+      "id": "cylinder_seal",
+      "historical_ja": "円筒印章",
+      "maps_to": "identity_standing",
+      "note_ja": "本人の署名。誰の印か＝参加者の identity。押印の履歴＝実績・来歴。standing が room の開閉に効く仕組みを印章で表現できる。",
+      "presentation_depth": "TBD"
+    },
+    {
+      "id": "case_tablet",
+      "historical_ja": "粘土の封筒（case tablet）",
+      "maps_to": "confidential_verified_settlement",
+      "note_ja": "契約タブレットを外側の粘土ケースで封じ、条項を見せない史実の形。Arcium MXE が payment_valid だけ返し、送金元・金額・エンドポイントを封じる形に対応。追跡不能化ではなく『封じて検証する』。",
+      "presentation_depth": "TBD"
+    },
+    {
+      "id": "tamkarum_shamallum",
+      "historical_ja": "商人（tamkārum）と交易代理人（šamallum）",
+      "maps_to": "human_and_agent",
+      "note_ja": "principal の商人が遠隔地を回る代理人に委託し、封印タブレットで account を精算した史実の構造。人間＝principal、自律エージェント＝代理人。",
+      "presentation_depth": "TBD"
+    },
+    {
+      "id": "sealed_tablet_account",
+      "historical_ja": "封印タブレットによる account 精算",
+      "maps_to": "escrow_and_arbitration",
+      "note_ja": "依頼・受注・納品・精算・係争の解決を、タブレットの記録として表現できる。",
+      "presentation_depth": "TBD"
+    }
+  ],
+  "stall_categories": {
+    "$comment": "禁制品ネーミングは不採用。実際の交易品で中立に分類する（史実準拠）。",
+    "imports": [
+      {
+        "id": "timber",
+        "label_ja": "木材",
+        "sources_ja": ["レバノン杉", "アマヌス山地方面"]
+      },
+      {
+        "id": "metal",
+        "label_ja": "金属",
+        "sources_ja": ["銅＝マガン／アナトリア方面", "錫＝東方ルート"]
+      },
+      {
+        "id": "stone_gem",
+        "label_ja": "石・宝石",
+        "sources_ja": ["ラピスラズリ＝バダフシャン方面", "紅玉髄＝インダス方面"]
+      }
+    ],
+    "exports": [
+      { "id": "textile", "label_ja": "繊維・織物" },
+      { "id": "foodstuff", "label_ja": "穀物・ナツメヤシ等の食料" },
+      { "id": "craft", "label_ja": "完成品・工芸" }
+    ]
+  },
+  "trade_partners": [
+    { "id": "dilmun", "label_ja": "ディルムン", "role_ja": "湾岸の中継地", "attested": true },
+    { "id": "magan", "label_ja": "マガン", "role_ja": "銅の産地", "attested": true },
+    { "id": "meluhha", "label_ja": "メルッハ", "role_ja": "インダス方面", "attested": true },
+    { "id": "anatolia", "label_ja": "アナトリア", "role_ja": "金属・木材方面", "attested": true },
+    { "id": "egypt", "label_ja": "エジプト", "role_ja": "遠隔地の交易相手", "attested": true }
+  ],
+  "market_logic_ja": "繊維・穀物を輸出し、木材・金属・石を輸入する。",
+  "participants": [
+    {
+      "id": "human",
+      "world_role_ja": "商人（principal）",
+      "can_be_ja": ["principal として委託する", "板の売り手として立つ"],
+      "board": "shared"
+    },
+    {
+      "id": "agent",
+      "world_role_ja": "交易代理人（šamallum）",
+      "capabilities": ["quoting", "order_intake", "settlement"],
+      "unattended": true,
+      "board": "shared"
+    }
+  ],
+  "writing_premise_ja": "二言語（シュメール語／アッカド語）で記録する必要から文字が発達した史実は、取引をエージェント可読の記録層に落とす動機付けとして world 側に置ける。機能は v0 のまま。",
+  "presentation": {
+    "$comment": "範囲外（加藤さん側）。CC は差し替え可能な形だけ用意し、値は入れない。ロジック側に見た目を散らさない。",
+    "owner": "kato",
+    "palette": "TBD",
+    "assets": "TBD",
+    "layout": "TBD",
+    "ui_treatment": "TBD",
+    "donwood_treatment_ja": "Donwood のトリートメントに古代モチーフを重ねるか置き換えるかは加藤さん判断",
+    "donwood_treatment": "TBD"
+  }
+}
