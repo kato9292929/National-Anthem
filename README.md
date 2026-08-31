@@ -9,6 +9,7 @@
 | `packages/shared` | 型・world config ローダ・命名解決・シード付き乱数。サーバとクライアントの契約 |
 | `packages/server` | 市場シム（サーバ権威・決定論）と HTTP API |
 | `packages/client` | WebGL 一人称クライアント。グレイボックスの市場空間と HUD |
+| `config/` | world 以外の設定（identity・room・以降のマイルストーン分）。ソースにリテラルを書かない |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
 | `docs/world-spec-v0.md` | 世界設定スペック v0（正典）。差別化指示書 §3「世界設定と固有名」と「経済の重心」の確定分 |
 | `world/world.config.json` | 上記の機械可読版。固有名・取引カテゴリ・参加者モデル・経済の重心・演出パラメータ |
@@ -51,6 +52,9 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `GET /api/world/config` | world config と解決済みの固有名・未確定リスト |
 | `GET /api/market/state` | 現在の market state（品目・価格・在庫・進行中のショック） |
 | `POST /api/market/shock` | 供給ショックの手動フック |
+| `GET /api/identity/session` | identity・wallet・standing・room gate の現在値 |
+| `POST /api/identity/rotate` | session wallet の rotate（評判は残る） |
+| `POST /api/identity/reputation` | 評判イベントの記録（開発用フック。実運用では M7 の commission 完了から積む） |
 
 ### マイルストーンの状態
 
@@ -59,9 +63,30 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | M0 | scaffold（パッケージ構成・config ローダ・env の枠・ラベル運用） | 済 |
 | M1 | サーバ権威の市場シム（決済もLLMも無し） | 済 |
 | M2 | 歩けるグレイボックス・クライアント | 済 |
+| M3 | identity & wallet（standing / room gate） | 済（区分A）／実照会は区分B 未消化 |
 | M3 以降 | identity/wallet、x402 決済、Arcium、エージェント自律、commission board | 別指示待ち |
 
 M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
+
+## 検証区分
+
+外部サービスのライブ検証は着手のブロックゲートにしない。検証は 2 つに分ける。
+
+| 区分 | 中身 | 状態 |
+| --- | --- | --- |
+| A: 実行環境内で完結 | ビルド・型・テスト・市場シム・描画・mock を通した一周 | `npm test` と `npm run smoke` で通る |
+| B: 加藤さん環境で消化 | 実 ERC-8004 照会、実 Circle DCW の wallet 発行、実チェーン残高 | **未消化**。該当箇所は `verified: false` と「未検証」ラベル付き |
+
+区分Bが未消化でも実装は進める。条件は「記載仕様にのみ従う／未検証ラベルをコードと README に残す／
+想定外レスポンスは握りつぶさず大きく失敗する」。
+
+### 未検証（区分B）の一覧
+
+| 箇所 | 内容 |
+| --- | --- |
+| `config/identity.config.json` の `external_assets` | ERC-8004（Base #55560 / Arc Testnet #845265）、AA 署名鍵、Circle DCW の EVM/Solana wallet。すべて確定値だが `verified: false` |
+| session wallet のアドレス | `mock:` 前置きの仮アドレス。実チェーン上に存在しない。実キー発行は区分B |
+| 認証 | 未実装。ローカルの単一 session identity（仮）で通している |
 
 ## 実装するときの決まり
 
@@ -69,6 +94,7 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 - `confirmed: false` は未確定。UI に出す前に確定を取るか、仮値と分かる形で出す。
 - 見た目（配色・アセット・レイアウト・UI）は範囲外。`presentation` ブロック（現在すべて `TBD`）にだけ置く。
   クライアント側のグレイボックスの値は `packages/client/src/greybox.ts` の 1 ファイルにまとめ、ロジックへ散らさない。
+- identity と wallet を混ぜない。wallet は rotate / revoke できる入れ物で、評判は identity に付く。
 - クライアントは市場を持たない。相場・在庫はサーバ（M1）の値だけを描く。取得に失敗したら画面に出す（古い値を新しい値として見せない）。
 - 物販と受発注は別モジュール。順位は `economy.modules` が持つ。物販側の都合で commission board の仕様を曲げない。
 - ancient world プロジェクトの資産・データ（aw-data）・禁則は流用しない。共有するのは美学のインスピレーションのみ。
@@ -82,6 +108,8 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 | `packages/client/src/greybox.ts` | グレイボックスの色・寸法・移動速度。確定した見た目ではない | ビジュアル確定時。この層を差し替える／上に重ねる |
 | `packages/client/src/hud.ts` の `PLACEHOLDER_HUD` | inventory / credits / 接続エージェント数はゼロ固定のプレースホルダ（画面にも「仮値」と出る） | M3（identity/wallet）以降 |
 | `scripts/smoke.mjs` の `FRAME_BUDGET_MS` | ヘッドレス（SwiftShader）向けの緩い予算 50ms | 対象デバイスが決まったら実機基準へ |
+| `config/identity.config.json` の `standing` | 初期値・重み・上下限は仮値（`confirmed: false`） | v0 の評判仕様が確定したら |
+| `config/rooms.config.json` | room の固有名（`ROOM_NAME_*`）としきい値は仮値。gate 判定は `provisional: true` を返す | 加藤さん確定時。config 差し替えのみ |
 | `.env.example` の M3 以降のキー | `NA_WALLET_PRIVATE_KEY` / `NA_X402_FACILITATOR_URL` / `NA_ARCIUM_CLUSTER_URL` / `NA_LLM_API_KEY` はキー名自体が仮 | 各マイルストーン着手時 |
 
 サーバは起動のたびに、未確定の固有名・仮値・後続マイルストーンの env 状態をログに出す。黙って確定扱いにしない。

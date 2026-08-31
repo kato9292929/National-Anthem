@@ -2,15 +2,29 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
 import { seedFrom, type MarketState } from '@na/shared';
-import { loadWorldConfig } from '@na/shared/node';
+import { loadIdentityConfig, loadRoomsConfig, loadWorldConfig } from '@na/shared/node';
 import { createHttpServer } from '../http.js';
+import { IdentityService } from '../identity/service.js';
 import { MarketSimulation } from '../market/simulation.js';
 
 const { config, path } = loadWorldConfig({});
+const identityConfig = loadIdentityConfig({}).value;
+const roomsConfig = loadRoomsConfig({}).value;
 
 async function withServer<T>(fn: (base: string, sim: MarketSimulation) => Promise<T>): Promise<T> {
   const sim = new MarketSimulation({ config, seed: seedFrom('http-test') });
-  const server = createHttpServer({ config, configPath: path, sim, port: 0 });
+  const identity = new IdentityService({ identityConfig, roomsConfig, seed: 11 });
+  const localPlayerId = identity.createIdentity({ kind: 'human' }).id;
+  identity.createSessionWallet(localPlayerId);
+  const server = createHttpServer({
+    config,
+    configPath: path,
+    sim,
+    identity,
+    roomsConfig,
+    localPlayerId,
+    port: 0,
+  });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   const { port } = server.address() as AddressInfo;
   try {
@@ -79,5 +93,60 @@ test('不正なショック要求はエラーを隠さず 500 で返す', async 
     assert.equal(res.status, 500);
     const body = (await res.json()) as { message: string };
     assert.match(body.message, /nope/);
+  });
+});
+
+test('GET /api/identity/session が identity・wallet・standing・room gate を返す', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/api/identity/session`);
+    const body = (await res.json()) as {
+      identity: { id: string };
+      wallet: { id: string; address: string };
+      standing: { score: number };
+      rooms: { id: string; gate: { allowed: boolean; provisional: boolean } }[];
+    };
+    assert.notEqual(body.wallet.id, body.identity.id, 'identity と wallet は別物');
+    assert.ok(body.wallet.address.startsWith('mock:'));
+    assert.equal(body.rooms.find((r) => r.id === 'market_floor')!.gate.allowed, true);
+    assert.equal(body.rooms.find((r) => r.id === 'inner_room')!.gate.allowed, false);
+    assert.equal(body.rooms.every((r) => r.gate.provisional), true, 'しきい値は仮値');
+  });
+});
+
+test('評判が積まれると room gate が開き、wallet を rotate しても開いたまま', async () => {
+  await withServer(async (base) => {
+    for (let i = 0; i < 5; i++) {
+      const res = await fetch(`${base}/api/identity/reputation`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'commission_completed', ref: `c-${i}` }),
+      });
+      assert.equal(res.status, 200);
+    }
+    const opened = (await (await fetch(`${base}/api/identity/session`)).json()) as {
+      rooms: { id: string; gate: { allowed: boolean } }[];
+      standing: { score: number };
+    };
+    assert.equal(opened.rooms.find((r) => r.id === 'inner_room')!.gate.allowed, true);
+
+    await fetch(`${base}/api/identity/rotate`, { method: 'POST' });
+    const afterRotate = (await (await fetch(`${base}/api/identity/session`)).json()) as {
+      rooms: { id: string; gate: { allowed: boolean } }[];
+      standing: { score: number };
+      wallet: { address: string };
+    };
+    assert.equal(afterRotate.standing.score, opened.standing.score, 'rotate で評判は消えない');
+    assert.equal(afterRotate.rooms.find((r) => r.id === 'inner_room')!.gate.allowed, true);
+  });
+});
+
+test('未知の評判種別は握りつぶさずエラーになる', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/api/identity/reputation`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'no_such_kind' }),
+    });
+    assert.equal(res.status, 500);
   });
 });

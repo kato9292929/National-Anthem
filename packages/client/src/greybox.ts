@@ -44,6 +44,16 @@ export const GREYBOX = {
     /** stall の前に立ったと見なす距離（m）。 */
     stallFocusRange: 4.5,
   },
+  /** 内側の区画（standing で開閉する門）。 */
+  gate: {
+    partitionOffsetZ: 6,
+    doorWidth: 2.2,
+    doorHeight: 3.2,
+    thickness: 0.45,
+    labelHeight: 3.9,
+    colorClosed: 0x7a6f5c,
+    colorOpenMarker: 0x5c6f7a,
+  },
   camera: { fov: 70, near: 0.1, far: 220 },
   fog: { near: 18, far: 120 },
 } as const;

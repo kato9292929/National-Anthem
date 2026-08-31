@@ -1,5 +1,5 @@
 import type { MarketItem, MarketItemState, MarketState } from '@na/shared';
-import type { WorldPayload } from './api.js';
+import type { SessionPayload, WorldPayload } from './api.js';
 import type { StallObject } from './scene.js';
 
 /**
@@ -7,7 +7,7 @@ import type { StallObject } from './scene.js';
  * inventory / credits / 接続エージェント数は M2 時点ではプレースホルダ値。仮値と分かる形で出す。
  */
 
-/** 【仮値】M3 以降（identity/wallet・エージェント自律）で実データに差し替える。 */
+/** 【仮値】inventory / credits / 接続エージェント数は未実装。M6・M7 で実データに差し替える。 */
 export const PLACEHOLDER_HUD = {
   inventorySlots: 0,
   inventoryCapacity: 12,
@@ -18,6 +18,7 @@ export const PLACEHOLDER_HUD = {
 export interface HudHandles {
   update(input: {
     world: WorldPayload;
+    session: SessionPayload | null;
     market: MarketState | null;
     focused: StallObject | null;
     fps: number;
@@ -39,6 +40,10 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
       <div class="row"><span>inventory</span><span><span id="hud-inventory"></span> <span class="tag">仮値</span></span></div>
       <div class="row"><span>credits</span><span><span id="hud-credits"></span> <span class="tag">仮値</span></span></div>
       <div class="row"><span>接続エージェント</span><span><span id="hud-agents"></span> <span class="tag">仮値</span></span></div>
+    </section>
+    <section class="panel" id="panel-identity">
+      <h2>identity / standing<span class="dim"> — 円筒印章の履歴</span></h2>
+      <div id="identity-body" class="dim">session 待ち</div>
     </section>
     <section class="panel" id="panel-stats">
       <div class="row"><span class="dim">fps</span><span id="stat-fps" class="num"></span></div>
@@ -65,7 +70,7 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
     world.unconfirmedNames.length > 0 ? `固有名 ${world.unconfirmedNames.length} 件 / presentation` : 'presentation';
 
   return {
-    update({ world: payload, market, focused, fps, frameMs, stale }) {
+    update({ world: payload, session, market, focused, fps, frameMs, stale }) {
       el('stat-fps').textContent = fps.toFixed(0);
       el('stat-frame').textContent = `${frameMs.toFixed(1)}ms`;
 
@@ -82,6 +87,7 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
       }
 
       el('focus-body').innerHTML = renderFocus(payload, market, focused);
+      el('identity-body').innerHTML = renderIdentity(session);
     },
   };
 }
@@ -113,6 +119,27 @@ function renderFocus(world: WorldPayload, market: MarketState | null, focused: S
     <div class="row"><span class="dim">在庫</span><span class="num">${state ? Math.round(state.stock) : '—'}</span></div>
     <div class="row"><span class="dim">基準価格</span><span class="num">${item ? item.basePrice.toFixed(2) : '—'}</span></div>
     ${state?.shock ? `<div class="row shock"><span>供給ショック</span><span>x${state.shock.supplyMultiplier} (${state.shock.origin})</span></div>` : ''}
+  `;
+}
+
+function renderIdentity(session: SessionPayload | null): string {
+  if (!session) return '<span class="dim">session 待ち</span>';
+  const { identity, wallet, standing, rooms } = session;
+  const shortAddress = wallet ? `${wallet.address.slice(0, 14)}…` : '—';
+  const roomRows = rooms
+    .map(
+      (room) => `<div class="row">
+        <span class="dim">${escapeHtml(room.label_ja)}</span>
+        <span class="${room.gate.allowed ? 'up' : 'down'}">${room.gate.allowed ? '開' : '閉'} <span class="dim">${room.gate.standing}/${room.gate.required}</span></span>
+      </div>`,
+    )
+    .join('');
+  return `
+    <div class="row"><span class="dim">identity</span><span>${escapeHtml(identity.id)} <span class="dim">${identity.kind}</span></span></div>
+    <div class="row"><span class="dim">wallet</span><span>${escapeHtml(shortAddress)} <span class="tag">未検証</span></span></div>
+    <div class="row"><span class="dim">standing</span><span>${standing.score} <span class="dim">押印 ${standing.impressions.total}（+${standing.impressions.positive}/-${standing.impressions.negative}）</span></span></div>
+    ${roomRows}
+    <div class="row dim"><span>gate しきい値</span><span class="tag">仮値</span></div>
   `;
 }
 

@@ -1,0 +1,39 @@
+{
+  "$comment": "M3 identity & wallet。外部資産は加藤さん確定値。実照会（区分B）は未消化なので verified:false。",
+  "version": "0",
+  "external_assets": {
+    "$comment": "確定値。ソースにリテラルを書かず、ここから引く。",
+    "erc8004": [
+      { "id": "base", "chain": "base", "agentId": "55560", "issuer": "circle-dcw", "confirmed": true, "verified": false },
+      { "id": "arc-testnet", "chain": "arc-testnet", "agentId": "845265", "issuer": "circle-dcw", "confirmed": true, "verified": false }
+    ],
+    "signers": [
+      { "id": "aa-solana", "kind": "solana-keypair", "address": "6JKVugbVRXR92sacDzgxBU6k6Mb9AAhxLbEy3DyWvEzA", "confirmed": true, "verified": false }
+    ],
+    "custodial_wallets": [
+      { "id": "dcw-evm-base", "provider": "circle-dcw", "chain": "base", "address": "0xAE7C34B72D0f49605ee2448C5f0D0eCFB4fcfeC8", "confirmed": true, "verified": false },
+      { "id": "dcw-solana", "provider": "circle-dcw", "chain": "solana", "address": "7PVToVBASYgo7c7BfqdditPgud1xnDrSpCgCBaQyL6tY", "confirmed": true, "verified": false }
+    ]
+  },
+  "standing": {
+    "$comment": "【仮値】standing の重みとしきい値。v0 で未確定。円筒印章の履歴＝押印の蓄積（world-spec §1）。",
+    "confirmed": false,
+    "initial": 20,
+    "min": 0,
+    "max": 100,
+    "weights": {
+      "payment_settled": 3,
+      "commission_completed": 8,
+      "dispute_won": 4,
+      "payment_late": -6,
+      "counterparty_vanished": -25,
+      "dispute_lost": -10
+    }
+  },
+  "session_wallet": {
+    "$comment": "【仮値】session wallet の既定。実キー発行は区分B。",
+    "confirmed": false,
+    "default_chain": "solana",
+    "rotate_keeps_reputation": true
+  }
+}

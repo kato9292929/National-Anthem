@@ -1,4 +1,4 @@
-import { ConfigError } from './errors.js';
+import { arr, bool, fail, obj, str } from './guards.js';
 import type {
   NamedValue,
   NamingKey,
@@ -10,41 +10,6 @@ import type {
  * world.config.json の検証。欠けていたら埋めずに落とす。
  * 推測でデフォルトを入れない（未確定は config 側で仮値＋ confirmed:false として持つ）。
  */
-
-function fail(message: string, source: string, key?: string): never {
-  throw new ConfigError(message, key === undefined ? { source } : { source, key });
-}
-
-function obj(value: unknown, source: string, key: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    fail(`オブジェクトである必要がある（実際: ${describe(value)}）`, source, key);
-  }
-  return value as Record<string, unknown>;
-}
-
-function arr(value: unknown, source: string, key: string): unknown[] {
-  if (!Array.isArray(value)) fail(`配列である必要がある（実際: ${describe(value)}）`, source, key);
-  return value;
-}
-
-function str(value: unknown, source: string, key: string): string {
-  if (typeof value !== 'string' || value === '') {
-    fail(`空でない文字列である必要がある（実際: ${describe(value)}）`, source, key);
-  }
-  return value;
-}
-
-function bool(value: unknown, source: string, key: string): boolean {
-  if (typeof value !== 'boolean') fail(`真偽値である必要がある（実際: ${describe(value)}）`, source, key);
-  return value;
-}
-
-function describe(value: unknown): string {
-  if (value === undefined) return 'undefined（キーが無い）';
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return `array(${value.length})`;
-  return typeof value;
-}
 
 function namedValue(value: unknown, source: string, key: string): NamedValue {
   const o = obj(value, source, key);

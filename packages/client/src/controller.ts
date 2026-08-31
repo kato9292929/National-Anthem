@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GREYBOX } from './greybox.js';
-import type { StallObject } from './scene.js';
+import type { Collider, StallObject } from './scene.js';
 
 /**
  * 一人称コントローラ。ポインタロック＋WASD。
@@ -11,6 +11,8 @@ export interface ControllerOptions {
   camera: THREE.PerspectiveCamera;
   canvas: HTMLCanvasElement;
   stalls: StallObject[];
+  /** 当たり判定の対象。門は開いている間だけ通れる。 */
+  colliders: Collider[];
   bounds: { halfWidth: number; halfDepth: number };
   onLockChange?: (locked: boolean) => void;
 }
@@ -19,6 +21,7 @@ export class FirstPersonController {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly canvas: HTMLCanvasElement;
   private readonly stalls: StallObject[];
+  private readonly colliders: Collider[];
   private readonly bounds: { halfWidth: number; halfDepth: number };
   private readonly keys = new Set<string>();
   private readonly velocity = new THREE.Vector3();
@@ -31,6 +34,7 @@ export class FirstPersonController {
     this.camera = options.camera;
     this.canvas = options.canvas;
     this.stalls = options.stalls;
+    this.colliders = options.colliders;
     this.bounds = options.bounds;
 
     this.canvas.addEventListener('click', () => {
@@ -130,8 +134,9 @@ export class FirstPersonController {
     next.x = Math.max(-limitX, Math.min(limitX, next.x));
     next.z = Math.max(-limitZ, Math.min(limitZ, next.z));
 
-    for (const stall of this.stalls) {
-      const b = stall.bounds;
+    for (const collider of this.colliders) {
+      if (!collider.isSolid()) continue;
+      const b = collider.bounds;
       if (
         next.x > b.minX - r &&
         next.x < b.maxX + r &&

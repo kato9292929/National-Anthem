@@ -1,4 +1,13 @@
-import type { MarketState, NamingKey, ResolvedName, WorldConfig } from '@na/shared';
+import type {
+  Identity,
+  MarketState,
+  NamingKey,
+  ResolvedName,
+  RoomGateResult,
+  Standing,
+  Wallet,
+  WorldConfig,
+} from '@na/shared';
 
 /**
  * サーバ（M1）だけが市場の真実を持つ。クライアントは取得して描くだけ。
@@ -26,6 +35,50 @@ export function fetchWorld(): Promise<WorldPayload> {
 
 export function fetchMarketState(): Promise<MarketState> {
   return getJson<MarketState>('/api/market/state');
+}
+
+export interface SessionPayload {
+  identity: Identity;
+  wallet: Wallet | null;
+  wallets: Wallet[];
+  standing: Standing;
+  rooms: {
+    id: string;
+    label_ja: string;
+    namePlaceholder: string;
+    nameConfirmed: boolean;
+    gate: RoomGateResult;
+  }[];
+  notes: { auth: string; walletVerification: string };
+}
+
+export function fetchSession(): Promise<SessionPayload> {
+  return getJson<SessionPayload>('/api/identity/session');
+}
+
+/** session（standing / room gate）を一定間隔で引く。市場と同じく、失敗は隠さない。 */
+export function pollSession(
+  intervalMs: number,
+  onSession: (session: SessionPayload) => void,
+  onError: (error: Error) => void,
+): MarketPoll {
+  let stopped = false;
+  const tick = async (): Promise<void> => {
+    if (stopped) return;
+    try {
+      onSession(await fetchSession());
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error(String(error)));
+    }
+  };
+  void tick();
+  const timer = window.setInterval(() => void tick(), intervalMs);
+  return {
+    stop() {
+      stopped = true;
+      window.clearInterval(timer);
+    },
+  };
 }
 
 export interface MarketPoll {

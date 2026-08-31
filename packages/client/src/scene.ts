@@ -18,13 +18,40 @@ export interface StallObject {
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
 }
 
+/** standing で開閉する門。閉じている間は当たり判定が有効。 */
+export interface GateObject {
+  roomId: string;
+  label_ja: string;
+  required: number;
+  door: THREE.Mesh<THREE.BoxGeometry, THREE.MeshLambertMaterial>;
+  label: THREE.Sprite;
+  labelCanvas: HTMLCanvasElement;
+  labelTexture: THREE.CanvasTexture;
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
+  open: boolean;
+}
+
+export interface Collider {
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
+  isSolid(): boolean;
+}
+
 export interface BuiltScene {
   scene: THREE.Scene;
   stalls: StallObject[];
+  gates: GateObject[];
+  colliders: Collider[];
   bounds: { halfWidth: number; halfDepth: number };
 }
 
-export function buildScene(layout: MarketLayout): BuiltScene {
+/** 門が要る room（standing のしきい値がある room）だけを門にする。 */
+export interface GateSpec {
+  roomId: string;
+  label_ja: string;
+  required: number;
+}
+
+export function buildScene(layout: MarketLayout, gateSpecs: GateSpec[] = []): BuiltScene {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(GREYBOX.color.sky);
   scene.fog = new THREE.Fog(GREYBOX.color.fog, GREYBOX.fog.near, GREYBOX.fog.far);
@@ -65,7 +92,137 @@ export function buildScene(layout: MarketLayout): BuiltScene {
     scene.add(stall.label);
   }
 
-  return { scene, stalls, bounds: { halfWidth: layout.halfWidth, halfDepth: layout.halfDepth } };
+  const { gates, partitions } = buildPartition(scene, layout, gateSpecs, wallMaterial);
+
+  const colliders: Collider[] = [
+    ...stalls.map((stall) => ({ bounds: stall.bounds, isSolid: () => true })),
+    ...partitions.map((bounds) => ({ bounds, isSolid: () => true })),
+    ...gates.map((gate) => ({ bounds: gate.bounds, isSolid: () => !gate.open })),
+  ];
+
+  return {
+    scene,
+    stalls,
+    gates,
+    colliders,
+    bounds: { halfWidth: layout.halfWidth, halfDepth: layout.halfDepth },
+  };
+}
+
+/**
+ * 内側の区画を仕切る壁と、その開口に立つ門を作る。
+ * 門の数と位置は room の数から決まる（room が増えても並びが伸縮する）。
+ */
+function buildPartition(
+  scene: THREE.Scene,
+  layout: MarketLayout,
+  specs: GateSpec[],
+  wallMaterial: THREE.MeshLambertMaterial,
+): { gates: GateObject[]; partitions: { minX: number; maxX: number; minZ: number; maxZ: number }[] } {
+  const gates: GateObject[] = [];
+  const partitions: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
+  if (specs.length === 0) return { gates, partitions };
+
+  const g = GREYBOX.gate;
+  const z = -layout.halfDepth + g.partitionOffsetZ;
+
+  // 開口は通路の内側にだけ作る。stall の列と重なると門まで歩けない。
+  const aisleHalf = GREYBOX.space.aisleWidth / 2 - GREYBOX.stall.depth / 2;
+  const step = (aisleHalf * 2) / (specs.length + 1);
+  const openings = specs.map((spec, index) => ({ spec, x: -aisleHalf + step * (index + 1) }));
+  const needed = specs.length * g.doorWidth;
+  if (needed > aisleHalf * 2) {
+    throw new Error(`門 ${specs.length} 枚が通路に収まらない（必要 ${needed}m / 通路 ${aisleHalf * 2}m）`);
+  }
+
+  // 開口以外を壁で埋める。
+  const edges = [-layout.halfWidth, ...openings.flatMap((o) => [o.x - g.doorWidth / 2, o.x + g.doorWidth / 2]), layout.halfWidth];
+  for (let i = 0; i < edges.length; i += 2) {
+    const from = edges[i]!;
+    const to = edges[i + 1]!;
+    const segmentWidth = to - from;
+    if (segmentWidth <= 0.01) continue;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(segmentWidth, GREYBOX.space.wallHeight, g.thickness),
+      wallMaterial,
+    );
+    mesh.position.set(from + segmentWidth / 2, GREYBOX.space.wallHeight / 2, z);
+    scene.add(mesh);
+    partitions.push({
+      minX: from,
+      maxX: to,
+      minZ: z - g.thickness / 2,
+      maxZ: z + g.thickness / 2,
+    });
+  }
+
+  for (const opening of openings) {
+    const door = new THREE.Mesh(
+      new THREE.BoxGeometry(g.doorWidth, g.doorHeight, g.thickness),
+      new THREE.MeshLambertMaterial({ color: g.colorClosed }),
+    );
+    door.position.set(opening.x, g.doorHeight / 2, z);
+    scene.add(door);
+
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 512;
+    labelCanvas.height = 256;
+    const labelTexture = new THREE.CanvasTexture(labelCanvas);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, transparent: true }));
+    label.scale.set(2.6, 1.3, 1);
+    label.position.set(opening.x, g.labelHeight, z);
+    scene.add(label);
+
+    gates.push({
+      roomId: opening.spec.roomId,
+      label_ja: opening.spec.label_ja,
+      required: opening.spec.required,
+      door,
+      label,
+      labelCanvas,
+      labelTexture,
+      bounds: {
+        minX: opening.x - g.doorWidth / 2,
+        maxX: opening.x + g.doorWidth / 2,
+        minZ: z - g.thickness / 2,
+        maxZ: z + g.thickness / 2,
+      },
+      open: false,
+    });
+  }
+
+  return { gates, partitions };
+}
+
+/** 門の開閉を反映する。開いた門は当たり判定も外れる。 */
+export function setGateOpen(gate: GateObject, open: boolean, standing: number): void {
+  gate.open = open;
+  gate.door.visible = !open;
+  gate.door.material.color.setHex(open ? GREYBOX.gate.colorOpenMarker : GREYBOX.gate.colorClosed);
+  drawGateLabel(gate, standing);
+}
+
+export function drawGateLabel(gate: GateObject, standing: number): void {
+  const ctx = gate.labelCanvas.getContext('2d');
+  if (!ctx) throw new Error('2d コンテキストを取得できない');
+  const { width, height } = gate.labelCanvas;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = 'rgba(20,21,23,0.86)';
+  ctx.fillRect(0, 0, width, height);
+  ctx.strokeStyle = gate.open ? '#9fd39f' : '#a38f5c';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(3, 3, width - 6, height - 6);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#e6e7e9';
+  fitFont(ctx, gate.label_ja, width - 48, 58, 'system-ui, sans-serif', 600);
+  ctx.fillText(gate.label_ja, width / 2, 88);
+  ctx.font = '44px ui-monospace, monospace';
+  ctx.fillStyle = gate.open ? '#9fd39f' : '#d9c48a';
+  ctx.fillText(gate.open ? '開' : '閉', width / 2, 150);
+  ctx.font = '36px ui-monospace, monospace';
+  ctx.fillStyle = '#b9bcc0';
+  ctx.fillText(`standing ${standing} / ${gate.required}`, width / 2, 206);
+  gate.labelTexture.needsUpdate = true;
 }
 
 function buildStall(slot: StallSlot): StallObject {

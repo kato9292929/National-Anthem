@@ -3,7 +3,10 @@
  */
 export * from './world-config.types.js';
 export * from './market.types.js';
+export * from './identity.types.js';
+export * from './identity.config.types.js';
 export * from './naming.js';
 export * from './rng.js';
 export * from './errors.js';
+export * from './guards.js';
 export * from './validate.js';

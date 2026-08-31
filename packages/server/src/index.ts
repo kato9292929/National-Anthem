@@ -16,6 +16,9 @@ function main(): void {
     config: runtime.config,
     configPath: runtime.configPath,
     sim: runtime.sim,
+    identity: runtime.identity,
+    roomsConfig: runtime.roomsConfig,
+    localPlayerId: runtime.localPlayerId,
     port,
     clientDist,
   });

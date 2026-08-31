@@ -1,13 +1,18 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
-import { resolveAllNames, unconfirmedNames, type WorldConfig } from '@na/shared';
+import { resolveAllNames, unconfirmedNames, type ReputationEventKind, type RoomsConfig, type WorldConfig } from '@na/shared';
+import type { IdentityService } from './identity/service.js';
 import type { MarketSimulation } from './market/simulation.js';
 
 export interface HttpOptions {
   config: WorldConfig;
   configPath: string;
   sim: MarketSimulation;
+  identity: IdentityService;
+  roomsConfig: RoomsConfig;
+  /** 認証は未実装。ローカルの単一 session identity（仮）。 */
+  localPlayerId: string;
   port: number;
   /** 指定すると同一オリジンでクライアントの静的ファイルを配信する。 */
   clientDist?: string | undefined;
@@ -25,7 +30,30 @@ const MIME: Record<string, string> = {
 };
 
 export function createHttpServer(options: HttpOptions) {
-  const { config, configPath, sim } = options;
+  const { config, configPath, sim, identity, roomsConfig, localPlayerId } = options;
+
+  /** session identity の現在地。room gate は standing で開閉する（world-spec §1 の印章の履歴）。 */
+  const sessionView = (): unknown => {
+    const player = identity.identity(localPlayerId);
+    return {
+      identity: player,
+      wallet: identity.activeWallet(localPlayerId),
+      wallets: identity.walletsOf(localPlayerId),
+      standing: identity.standing(localPlayerId),
+      reputation: identity.reputationOf(localPlayerId),
+      rooms: roomsConfig.rooms.map((room) => ({
+        id: room.id,
+        label_ja: room.label_ja,
+        namePlaceholder: room.name_placeholder,
+        nameConfirmed: room.name_confirmed,
+        gate: identity.canEnter(localPlayerId, room.id),
+      })),
+      notes: {
+        auth: '認証は未実装。ローカルの単一 session identity（仮）',
+        walletVerification: '実 wallet / ERC-8004 照会は未検証（区分B）',
+      },
+    };
+  };
 
   const server = createServer((req, res) => {
     void handle(req, res).catch((error: unknown) => {
@@ -63,6 +91,31 @@ export function createHttpServer(options: HttpOptions) {
       case 'GET /api/market/state':
         sendJson(res, 200, sim.state(Date.now()));
         return;
+
+      case 'GET /api/identity/session':
+        sendJson(res, 200, sessionView());
+        return;
+
+      case 'POST /api/identity/rotate': {
+        const wallet = identity.activeWallet(localPlayerId);
+        if (!wallet) throw new Error('active な wallet が無い');
+        const rotated = identity.rotateWallet(wallet.id, 'api');
+        sendJson(res, 200, { rotated, standing: identity.standing(localPlayerId) });
+        return;
+      }
+
+      case 'POST /api/identity/reputation': {
+        // standing を動かす開発用フック。実運用では M7 の commission 完了から積む。
+        const body = (await readJson(req)) as Record<string, unknown>;
+        const event = identity.recordReputation({
+          identityId: String(body['identityId'] ?? localPlayerId),
+          kind: String(body['kind'] ?? '') as ReputationEventKind,
+          ref: body['ref'] === undefined ? null : String(body['ref']),
+          note: String(body['note'] ?? 'dev hook'),
+        });
+        sendJson(res, 200, { event, standing: identity.standing(localPlayerId) });
+        return;
+      }
 
       case 'POST /api/market/shock': {
         const body = await readJson(req);

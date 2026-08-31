@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ConfigError } from './errors.js';
+import { validateIdentityConfig, validateRoomsConfig, type IdentityConfig, type RoomsConfig } from './identity.config.types.js';
 import { validateWorldConfig } from './validate.js';
 import type { WorldConfig } from './world-config.types.js';
 
@@ -60,4 +61,38 @@ export function loadWorldConfig(env: NodeJS.ProcessEnv = process.env): LoadedWor
     throw new ConfigError(`world config が JSON として壊れている: ${(cause as Error).message}`, { source: path });
   }
   return { config: validateWorldConfig(parsed, path), path };
+}
+
+/** config/ 以下の追加設定。world config と同じく、欠けていたら埋めずに落とす。 */
+export function loadJsonConfig<T>(
+  relativePath: string,
+  validate: (input: unknown, source: string) => T,
+  env: NodeJS.ProcessEnv = process.env,
+): { value: T; path: string } {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const root = env['NA_WORLD_CONFIG']
+    ? dirname(dirname(resolveWorldConfigPath(env)))
+    : findRepoRoot(here);
+  const path = join(root, relativePath);
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf8');
+  } catch (cause) {
+    throw new ConfigError(`config を読めない: ${(cause as Error).message}`, { source: path });
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new ConfigError(`config が JSON として壊れている: ${(cause as Error).message}`, { source: path });
+  }
+  return { value: validate(parsed, path), path };
+}
+
+export function loadIdentityConfig(env: NodeJS.ProcessEnv = process.env): { value: IdentityConfig; path: string } {
+  return loadJsonConfig('config/identity.config.json', validateIdentityConfig, env);
+}
+
+export function loadRoomsConfig(env: NodeJS.ProcessEnv = process.env): { value: RoomsConfig; path: string } {
+  return loadJsonConfig('config/rooms.config.json', validateRoomsConfig, env);
 }

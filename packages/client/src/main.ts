@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import type { MarketState } from '@na/shared';
-import { fetchWorld, pollMarketState, type WorldPayload } from './api.js';
+import { fetchSession, fetchWorld, pollMarketState, pollSession, type SessionPayload, type WorldPayload } from './api.js';
 import { FirstPersonController } from './controller.js';
 import { GREYBOX } from './greybox.js';
 import { createHud } from './hud.js';
 import { buildLayout } from './layout.js';
-import { buildScene, drawStallLabel, type StallObject } from './scene.js';
+import { buildScene, drawStallLabel, setGateOpen, type StallObject } from './scene.js';
 
 /**
  * M2: 歩けるグレイボックス・クライアント。
@@ -15,6 +15,7 @@ import { buildScene, drawStallLabel, type StallObject } from './scene.js';
  */
 
 const MARKET_POLL_MS = 1000;
+const SESSION_POLL_MS = 1000;
 /** これを超えて更新が来なければ「更新停止」と表示する。 */
 const STALE_AFTER_MS = 4000;
 
@@ -26,6 +27,8 @@ interface DebugHandle {
   averageFrameMs: number;
   fps: number;
   unconfirmedNames: string[];
+  gates: () => { roomId: string; open: boolean; required: number; x: number; z: number }[];
+  standing: () => number | null;
   stallPositions: { categoryId: string; x: number; z: number }[];
   moveTo(x: number, z: number): void;
   position: () => { x: number; z: number };
@@ -62,8 +65,20 @@ async function main(): Promise<void> {
     throw error;
   }
 
+  // room（門）はサーバから来る。standing のしきい値も room 定義も config 由来。
+  let session: SessionPayload | null = null;
+  try {
+    session = await fetchSession();
+  } catch (error) {
+    showError(`session を取得できない: ${(error as Error).message}`);
+    throw error;
+  }
+
   const layout = buildLayout(world.config.stall_categories);
-  const built = buildScene(layout);
+  const gateSpecs = session.rooms
+    .filter((room) => room.gate.required > 0)
+    .map((room) => ({ roomId: room.id, label_ja: room.label_ja, required: room.gate.required }));
+  const built = buildScene(layout, gateSpecs);
   const hud = createHud(hudRoot, world);
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -88,11 +103,28 @@ async function main(): Promise<void> {
     camera,
     canvas,
     stalls: built.stalls,
+    colliders: built.colliders,
     bounds: built.bounds,
     onLockChange: (locked) => {
       prompt.hidden = locked;
     },
   });
+
+  const applySession = (next: SessionPayload): void => {
+    session = next;
+    for (const gate of built.gates) {
+      const room = next.rooms.find((r) => r.id === gate.roomId);
+      if (!room) throw new Error(`サーバに無い room: ${gate.roomId}`);
+      setGateOpen(gate, room.gate.allowed, next.standing.score);
+    }
+  };
+  applySession(session);
+
+  pollSession(
+    SESSION_POLL_MS,
+    (next) => applySession(next),
+    (error) => showError(`session を取得できない: ${error.message}`),
+  );
 
   let market: MarketState | null = null;
   let lastMarketAt = 0;
@@ -145,6 +177,7 @@ async function main(): Promise<void> {
 
     hud.update({
       world,
+      session,
       market,
       focused,
       fps,
@@ -170,6 +203,15 @@ async function main(): Promise<void> {
       return fps;
     },
     unconfirmedNames: world.unconfirmedNames,
+    gates: () =>
+      built.gates.map((g) => ({
+        roomId: g.roomId,
+        open: g.open,
+        required: g.required,
+        x: g.door.position.x,
+        z: g.door.position.z,
+      })),
+    standing: () => session?.standing.score ?? null,
     stallPositions: built.stalls.map((s) => ({ categoryId: s.slot.categoryId, x: s.slot.x, z: s.slot.z })),
     moveTo: (x: number, z: number) => {
       controller.setInput([]);

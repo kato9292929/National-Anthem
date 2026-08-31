@@ -1,0 +1,30 @@
+{
+  "$comment": "M3 room gate。room の固有名は加藤さん確定待ちのため仮値（naming.* と同じ扱い）。しきい値も仮値。",
+  "version": "0",
+  "rooms": [
+    {
+      "id": "market_floor",
+      "label_ja": "市場（表）",
+      "name_placeholder": "ROOM_NAME_MARKET_FLOOR",
+      "name_confirmed": false,
+      "minStanding": 0,
+      "gate_confirmed": false
+    },
+    {
+      "id": "inner_room",
+      "label_ja": "奥の間",
+      "name_placeholder": "ROOM_NAME_INNER",
+      "name_confirmed": false,
+      "minStanding": 45,
+      "gate_confirmed": false
+    },
+    {
+      "id": "sealed_room",
+      "label_ja": "封印の間",
+      "name_placeholder": "ROOM_NAME_SEALED",
+      "name_confirmed": false,
+      "minStanding": 75,
+      "gate_confirmed": false
+    }
+  ]
+}

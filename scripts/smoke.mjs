@@ -168,6 +168,80 @@ try {
   // 確認用に通路の南端から市場全体を撮る。
   await page.evaluate(() => window.__na_debug.moveTo(0, 13));
   await sleep(400);
+  // M3: standing が room gate に効く（mock で一周）。
+  const gatesBefore = await page.evaluate(() => window.__na_debug.gates());
+  check(gatesBefore.length > 0, 'standing で開閉する門が立っている', `${gatesBefore.length} 門`);
+  check(
+    gatesBefore.every((g) => !g.open),
+    '初期 standing では門が閉じている',
+    gatesBefore.map((g) => `${g.roomId}:${g.open ? '開' : '閉'}`).join(', '),
+  );
+
+  const blockedByGate = await page.evaluate(async () => {
+    const hold = (codes, ms) =>
+      new Promise((resolve) => {
+        for (const code of codes) window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+        setTimeout(() => {
+          for (const code of codes) window.dispatchEvent(new KeyboardEvent('keyup', { code }));
+          resolve();
+        }, ms);
+      });
+    const gate = window.__na_debug.gates()[0];
+    window.__na_debug.moveTo(gate.x, gate.z + 3);
+    await hold(['KeyW'], 1400);
+    return { ...window.__na_debug.position(), roomId: gate.roomId, gateZ: gate.z };
+  });
+  check(
+    blockedByGate.z > blockedByGate.gateZ,
+    '閉じた門は通れない',
+    `z=${blockedByGate.z.toFixed(2)} / 門 z=${blockedByGate.gateZ.toFixed(2)}`,
+  );
+
+  for (let i = 0; i < 5; i++) {
+    const res = await fetch(`${BASE}/api/identity/reputation`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'commission_completed', ref: `smoke-${i}`, note: 'smoke' }),
+    });
+    if (!res.ok) throw new Error(`reputation の記録に失敗: ${res.status}`);
+  }
+  await page.waitForFunction(() => window.__na_debug.gates().some((g) => g.open), null, { timeout: 8000 });
+  const opened = await page.evaluate(() => ({
+    gates: window.__na_debug.gates(),
+    standing: window.__na_debug.standing(),
+  }));
+  check(opened.gates.some((g) => g.open), 'standing が上がると門が開く', `standing=${opened.standing}`);
+
+  const passed = await page.evaluate(async () => {
+    const hold = (codes, ms) =>
+      new Promise((resolve) => {
+        for (const code of codes) window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+        setTimeout(() => {
+          for (const code of codes) window.dispatchEvent(new KeyboardEvent('keyup', { code }));
+          resolve();
+        }, ms);
+      });
+    const gate = window.__na_debug.gates().find((g) => g.open);
+    window.__na_debug.moveTo(gate.x, gate.z + 3);
+    await hold(['KeyW'], 1600);
+    return { ...window.__na_debug.position(), gateZ: gate.z };
+  });
+  check(passed.z < passed.gateZ, '開いた門は通れる', `z=${passed.z.toFixed(2)} / 門 z=${passed.gateZ.toFixed(2)}`);
+
+  // wallet を rotate しても評判は残り、門は開いたまま。
+  const rotateRes = await fetch(`${BASE}/api/identity/rotate`, { method: 'POST' });
+  if (!rotateRes.ok) throw new Error(`rotate に失敗: ${rotateRes.status}`);
+  await sleep(1400);
+  const afterRotate = await page.evaluate(() => ({
+    gates: window.__na_debug.gates(),
+    standing: window.__na_debug.standing(),
+  }));
+  check(
+    afterRotate.gates.some((g) => g.open) && afterRotate.standing === opened.standing,
+    'wallet を rotate しても評判と門の状態が続く',
+    `standing=${afterRotate.standing}`,
+  );
+
   mkdirSync('artifacts', { recursive: true });
   await page.screenshot({ path: 'artifacts/m2-greybox.png' });
   console.log('screenshot: artifacts/m2-greybox.png');

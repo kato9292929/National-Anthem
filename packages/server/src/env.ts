@@ -62,6 +62,14 @@ export const ENV_SPECS: EnvSpec[] = [
     fallback: '0',
   },
   {
+    key: 'NA_DATA_DIR',
+    description: 'identity / 評判の永続化先。未指定ならメモリのみ（プロセス終了で消える）。',
+    requiredFrom: 'M7',
+    provisional: false,
+    secret: false,
+    example: 'var',
+  },
+  {
     key: 'NA_WALLET_PRIVATE_KEY',
     description: '[M3 identity/wallet] 未着手。キー名は仮。',
     requiredFrom: 'M3',
