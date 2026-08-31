@@ -20,6 +20,21 @@ function main(): void {
     roomsConfig: runtime.roomsConfig,
     localPlayerId: runtime.localPlayerId,
     x402Status: () => runtime.x402.status(),
+    agentStatus: () => ({
+      models: runtime.agentConfig.models,
+      caching: runtime.agentConfig.caching,
+      cadence: runtime.agentConfig.cadence,
+      budget: runtime.agentConfig.budget,
+      pricing: { as_of: runtime.agentConfig.pricing.as_of, verified: runtime.agentConfig.pricing.verified },
+      gate: runtime.agentGate,
+      notes: {
+        scheduling: runtime.agentGate.satisfied
+          ? '稼働前ゲートは充足。schedule に載せられる'
+          : '稼働前ゲート未達のため schedule では回さない',
+        dryRun: 'npm run agent:dry-run で 1 サイクルのトークン量とコストを測る（LLM 呼び出し 0）',
+        llm: '市場の動きは M1 の決定論。LLM は推論が要る判断だけに使う',
+      },
+    }),
     privacyStatus: () => ({
       gateway: { ...runtime.privacyConfig.gateway, mode: runtime.gatewayMode },
       response: runtime.privacyConfig.response,

@@ -35,7 +35,8 @@ npm test                  # サーバのテスト（config / env / 市場シム 
 npm run sim -- --ticks 200 --every 40 --shock-at 60   # ヘッドレスで市場を回す
 npm run dev:server        # http://localhost:8787
 npm run dev:client        # http://localhost:5173（/api はサーバへプロキシ）
-npm run smoke             # Chromium で M2 の受け入れを確認し artifacts/ に画面を残す
+npm run smoke             # Chromium で M2/M3 の受け入れを確認し artifacts/ に画面を残す
+npm run agent:dry-run     # M6 の dry-run。1 サイクルのトークン量とコストを出す（LLM 呼び出し 0）
 
 # config 差し替えだけで表示が変わることの確認（ソースは触らない）
 NA_WORLD_CONFIG=path/to/other.config.json npm run smoke
@@ -52,6 +53,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `GET /api/world/config` | world config と解決済みの固有名・未確定リスト |
 | `GET /api/market/state` | 現在の market state（品目・価格・在庫・進行中のショック） |
 | `POST /api/market/shock` | 供給ショックの手動フック |
+| `GET /api/agent/status` | モデル・キャッシュ・tick・予算・稼働前ゲートの判定（秘密は出さない） |
 | `GET /api/privacy/status` | Gateway の状態・記録方針・claim の線（秘密は出さない） |
 | `GET /api/x402/status` | x402 の protocol / facilitator / レール状態・署名可否（秘密は出さない） |
 | `GET /api/identity/session` | identity・wallet・standing・room gate の現在値 |
@@ -68,6 +70,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | M3 | identity & wallet（standing / room gate） | 済（区分A）／実照会は区分B 未消化 |
 | M4 | x402 決済の配線（native withX402 v2） | 済（区分A）／実 facilitator・実着金は区分B 未消化 |
 | M5 | privacy 層（x402 Private Gateway / Arcium MXE） | 済（区分A）／実 MXE 投入・実 RPC は区分B 未消化 |
+| M6 | エージェント自律（LLM） | 実装済・**稼働前ゲート未達のため schedule では回していない** |
 | M3 以降 | identity/wallet、x402 決済、Arcium、エージェント自律、commission board | 別指示待ち |
 
 M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
@@ -94,6 +97,8 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 | `config/x402.config.json` の facilitator | `https://facilitator.payai.network`（PayAI）。疎通は未検証 |
 | x402 の実署名 | Solana keypair / EVM EIP-712 の実署名は未実装。鍵が無いレールは `unavailableSigner` で落ちる（別レールに振り替えない） |
 | 実レール着金 | 未検証。区分A は mock facilitator と mock リソースサーバで一周を確認 |
+| LLM のトークン実測 | dry-run はローカル概算。`count_tokens` による実測と実 API 呼び出しは未消化 |
+| 料金表 | `config/agent.config.json` の `pricing`（as_of 2026-06-24）は変動するので未検証扱い |
 | Arcium MXE / Gateway | `config/privacy.config.json` の gateway URL は未指定（`TBD`）。実 MXE 投入・実 RPC は未検証。区分A は bool を返す mock MXE で結線を確認 |
 
 ## x402（M4）
@@ -126,6 +131,32 @@ leg は `amount`。確定値は `config/x402.config.json` に置き、ソース�
   この線は config の `claims`（`mixer: false` / `untraceability: false`）で固定し、
   違う値を入れると config 検証が落ちる。
 
+## エージェント自律（M6）
+
+市場の動きは M1 の決定論で回す。LLM は**本当に推論が要る判断**（quoting・受託判断）だけに使う。
+
+### 稼働前ゲート
+
+`config/agent.config.json` が満たすまで `startAgentLoop` は例外で止まる。実測前に schedule で回さない。
+
+| # | 条件 | 現状 |
+| --- | --- | --- |
+| 1 | 判定・quoting は Haiku / Sonnet から。opus 全採用にしない | 充足（quoting/judgement `claude-haiku-4-5`、escalation `claude-sonnet-5`。`opusAllowed: true` は config 検証で落ちる） |
+| 2 | prompt caching を固定プレフィックス＋可変の順で組む | 充足（system に `cache_control: ephemeral`、可変値は messages 側。固定側に tick・価格を混ぜない） |
+| 3 | tick 頻度と 1 回あたり入力トークン量の確定 | **未達**（`cadence` が null・`confirmed: false`。加藤さん確定待ち） |
+| 4 | spend limit の実数ハードキャップ＋通知 | 充足（`hardCapUsd: 5.0` / `warnAtUsd: 2.5` / 通知あり） |
+| 5 | auto-reload を垂れ流しにしない | 充足（`autoReload: true` は config 検証で落ちる） |
+| — | dry-run の実測 | 充足（`npm run agent:dry-run`） |
+
+### dry-run の実測（この環境）
+
+`npm run agent:dry-run` の結果: 1 サイクル 7 呼び出し / 入力 2,432 トークン（うちキャッシュ読み 1,122）/
+出力 2,240 トークン（想定値・仮値）/ **0.0129 USD**。ハードキャップ 5 USD の内側。
+トークン数はローカル概算（`local-estimate`）で**未検証**。実測は API キーのある環境で
+`count_tokens`（`ApiTokenCounter`）を通す（区分B）。
+
+料金表は claude-api の一覧（as_of 2026-06-24）を config に置いている。変動するので `verified: false`。
+
 ## 実装するときの決まり
 
 - 固有名（市場名・地区名・NPC・stall）はソースにリテラルで書かず、`world/world.config.json` から引く。
@@ -149,6 +180,8 @@ leg は `amount`。確定値は `config/x402.config.json` に置き、ソース�
 | `config/x402.config.json` の `base` / `evm-secondary` レール | network / asset / payTo が未指定なので `TBD`・`confirmed:false`。使おうとすると落ちる（推測で埋めない） | 値が確定したら config 差し替え |
 | `config/identity.config.json` の `standing` | 初期値・重み・上下限は仮値（`confirmed: false`） | v0 の評判仕様が確定したら |
 | `config/rooms.config.json` | room の固有名（`ROOM_NAME_*`）としきい値は仮値。gate 判定は `provisional: true` を返す | 加藤さん確定時。config 差し替えのみ |
+| `config/agent.config.json` の `cadence` | tick 頻度・1 回あたり入力トークン・tick あたり呼び出し数はすべて null（未確定） | 加藤さん確定時。埋まるまでゲートが開かない |
+| `packages/server/src/agent/dry-run.ts` の `ASSUMED_OUTPUT_TOKENS_PER_CALL` | 出力トークンの想定値 320 は仮値 | 実測（区分B）で置き換える |
 | `.env.example` の M3 以降のキー | `NA_WALLET_PRIVATE_KEY` / `NA_X402_FACILITATOR_URL` / `NA_ARCIUM_CLUSTER_URL` / `NA_LLM_API_KEY` はキー名自体が仮 | 各マイルストーン着手時 |
 
 サーバは起動のたびに、未確定の固有名・仮値・後続マイルストーンの env 状態をログに出す。黙って確定扱いにしない。

@@ -5,10 +5,12 @@ import {
   type IdentityConfig,
   type RoomsConfig,
   type WorldConfig,
+  type AgentConfig,
   type PrivacyConfig,
   type X402Config,
 } from '@na/shared';
 import {
+  loadAgentConfig,
   loadIdentityConfig,
   loadPrivacyConfig,
   loadRoomsConfig,
@@ -16,6 +18,8 @@ import {
   loadX402Config,
 } from '@na/shared/node';
 import { IdentityService } from './identity/service.js';
+import { evaluateGates, type GateResult } from './agent/gate.js';
+import { loadMeasurement } from './agent/dry-run.js';
 import { createHttpMxeClient, createMockMxe, PrivateGateway } from './privacy/gateway.js';
 import { PaymentRecordStore } from './privacy/records.js';
 import { createX402Service, type X402Service } from './x402/service.js';
@@ -41,6 +45,8 @@ export interface Runtime {
   paymentRecords: PaymentRecordStore;
   /** 実 MXE に向いているか（未検証）、mock か。 */
   gatewayMode: 'http' | 'mock';
+  agentConfig: AgentConfig;
+  agentGate: GateResult;
   /**
    * 認証は未実装（この段階の範囲外）。ローカルの単一 session identity を仮で立てる。
    * 複数プレイヤーの認証・セッション管理は別途。
@@ -82,6 +88,9 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   );
   const paymentRecords = new PaymentRecordStore(eventLog, privacyConfig.recording);
 
+  const agentConfig = loadAgentConfig(process.env).value;
+  const agentGate = evaluateGates(agentConfig, loadMeasurement(agentConfig.run.measurementPath));
+
   return {
     config,
     configPath: path,
@@ -98,6 +107,8 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     gateway,
     paymentRecords,
     gatewayMode,
+    agentConfig,
+    agentGate,
     localPlayerId: localPlayer.id,
   };
 }
@@ -143,6 +154,19 @@ export function printStartupLabels(runtime: Runtime): void {
       `返るのは ${runtime.privacyConfig.response.allowedFields.join(', ')} のみ`,
   );
   console.log(`[privacy] ${runtime.privacyConfig.claims.claim_ja}`);
+  console.log(
+    `[agent] models: quoting=${runtime.agentConfig.models.quoting} / judgement=${runtime.agentConfig.models.judgement} ` +
+      `/ escalation=${runtime.agentConfig.models.escalation}（opus 全採用にしない）`,
+  );
+  console.log(
+    `[agent] 稼働前ゲート: ${runtime.agentGate.satisfied ? '充足' : '未達'}` +
+      (runtime.agentGate.satisfied
+        ? ''
+        : ` — ${runtime.agentGate.blockers.map((b) => b.id).join(', ')}（schedule では回さない）`),
+  );
+  console.log(
+    `[agent] spend cap ${runtime.agentConfig.budget.hardCapUsd} USD / warn ${runtime.agentConfig.budget.warnAtUsd} USD / auto-reload なし`,
+  );
 }
 
 export function resolveClientDist(cwd = process.cwd()): string {

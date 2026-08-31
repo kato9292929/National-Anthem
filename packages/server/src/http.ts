@@ -15,6 +15,7 @@ export interface HttpOptions {
   localPlayerId: string;
   x402Status: () => unknown;
   privacyStatus: () => unknown;
+  agentStatus: () => unknown;
   port: number;
   /** 指定すると同一オリジンでクライアントの静的ファイルを配信する。 */
   clientDist?: string | undefined;
@@ -92,6 +93,10 @@ export function createHttpServer(options: HttpOptions) {
 
       case 'GET /api/market/state':
         sendJson(res, 200, sim.state(Date.now()));
+        return;
+
+      case 'GET /api/agent/status':
+        sendJson(res, 200, options.agentStatus());
         return;
 
       case 'GET /api/privacy/status':

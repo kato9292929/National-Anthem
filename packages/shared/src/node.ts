@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { ConfigError } from './errors.js';
 import { validateIdentityConfig, validateRoomsConfig, type IdentityConfig, type RoomsConfig } from './identity.config.types.js';
 import { validateWorldConfig } from './validate.js';
+import { validateAgentConfig, type AgentConfig } from './agent.types.js';
 import { validatePrivacyConfig, type PrivacyConfig } from './privacy.types.js';
 import { validateX402Config, type X402Config } from './x402.types.js';
 import type { WorldConfig } from './world-config.types.js';
@@ -105,4 +106,8 @@ export function loadX402Config(env: NodeJS.ProcessEnv = process.env): { value: X
 
 export function loadPrivacyConfig(env: NodeJS.ProcessEnv = process.env): { value: PrivacyConfig; path: string } {
   return loadJsonConfig('config/privacy.config.json', validatePrivacyConfig, env);
+}
+
+export function loadAgentConfig(env: NodeJS.ProcessEnv = process.env): { value: AgentConfig; path: string } {
+  return loadJsonConfig('config/agent.config.json', validateAgentConfig, env);
 }

@@ -1,0 +1,50 @@
+{
+  "$comment": "M6 エージェント自律。稼働前ゲートを満たすまで schedule で回さない。市場の動きは M1 の決定論で回し、LLM は推論が要る判断だけ。",
+  "version": "0",
+  "models": {
+    "$comment": "判定・quoting は Haiku / Sonnet から。opus を全採用にしない。モデル ID は claude-api の一覧どおり。",
+    "quoting": "claude-haiku-4-5",
+    "judgement": "claude-haiku-4-5",
+    "escalation": "claude-sonnet-5",
+    "opusAllowed": false,
+    "confirmed": true
+  },
+  "pricing": {
+    "$comment": "USD / 1M tokens。claude-api の一覧（cached 2026-06-24）。料金は変わるので verified:false のまま扱う。",
+    "as_of": "2026-06-24",
+    "verified": false,
+    "perModel": {
+      "claude-haiku-4-5": { "input": 1.0, "output": 5.0, "cacheReadMultiplier": 0.1, "cacheWriteMultiplier": 1.25 },
+      "claude-sonnet-5": { "input": 2.0, "output": 10.0, "cacheReadMultiplier": 0.1, "cacheWriteMultiplier": 1.25 },
+      "claude-opus-5": { "input": 5.0, "output": 25.0, "cacheReadMultiplier": 0.1, "cacheWriteMultiplier": 1.25 }
+    }
+  },
+  "caching": {
+    "$comment": "固定プレフィックス（system）→ 可変（messages）の順。入力が出力より大きいので必須。",
+    "enabled": true,
+    "breakpoint": "system-prefix",
+    "ttl": "5m",
+    "requireCacheHit": true,
+    "confirmed": true
+  },
+  "cadence": {
+    "$comment": "tick 頻度と 1 回あたり入力トークン量。加藤さん確定待ちのため未確定。確定するまで schedule は回せない。",
+    "tickIntervalSeconds": null,
+    "maxInputTokensPerCall": null,
+    "maxCallsPerTick": null,
+    "confirmed": false
+  },
+  "budget": {
+    "$comment": "実数のハードキャップ。青天井にしない。auto-reload は行わない。",
+    "hardCapUsd": 5.0,
+    "warnAtUsd": 2.5,
+    "notify": true,
+    "autoReload": false,
+    "confirmed": true
+  },
+  "run": {
+    "$comment": "dry-run で 1 サイクルのトークン量とコストを実測してから本稼働。実測前に schedule で回さない。",
+    "dryRunRequired": true,
+    "measurementPath": "var/agent-dry-run.json"
+  }
+}

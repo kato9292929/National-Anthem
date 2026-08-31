@@ -18,7 +18,8 @@
     "sim": "npm run sim -w @na/server",
     "dev:server": "npm run dev -w @na/server",
     "dev:client": "npm run dev -w @na/client",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "agent:dry-run": "npm run agent:dry-run -w @na/server"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
