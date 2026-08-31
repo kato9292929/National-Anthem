@@ -1,0 +1,30 @@
+/* グレイボックス段階の最小限。確定した UI デザインではない（presentation は範囲外）。 */
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #1b1c1e; color: #e6e7e9;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, "DejaVu Sans Mono", monospace; }
+#stage { display: block; width: 100vw; height: 100vh; }
+#hud { position: fixed; inset: 0; pointer-events: none; padding: 14px; display: grid;
+  grid-template-columns: 300px 1fr 320px; grid-template-rows: auto 1fr auto; gap: 12px; }
+.panel { background: rgba(20,21,23,.82); border: 1px solid #45474b; padding: 10px 12px; }
+.panel h2 { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .04em; color: #b9bcc0; }
+.row { display: flex; justify-content: space-between; gap: 10px; }
+.row + .row { margin-top: 3px; }
+.dim { color: #8a8d92; }
+.tag { border: 1px solid #6a6d72; padding: 0 4px; font-size: 11px; color: #b9bcc0; }
+.up { color: #9fd39f; } .down { color: #d99b9b; } .shock { color: #d9c48a; }
+#panel-market { grid-column: 1; grid-row: 1; }
+#panel-focus { grid-column: 3; grid-row: 1; }
+#panel-hud { grid-column: 1; grid-row: 3; align-self: end; }
+#panel-stats { grid-column: 3; grid-row: 3; align-self: end; }
+#crosshair { grid-column: 2; grid-row: 2; align-self: center; justify-self: center;
+  width: 6px; height: 6px; border: 1px solid #b9bcc0; border-radius: 50%; }
+#prompt { position: fixed; left: 50%; top: 62%; transform: translateX(-50%);
+  background: rgba(20,21,23,.9); border: 1px solid #45474b; padding: 8px 14px; }
+#prompt[hidden] { display: none; }
+#error { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); max-width: 70vw;
+  background: #3a1f1f; border: 1px solid #a35c5c; color: #f0d6d6; padding: 8px 14px; white-space: pre-wrap; }
+#error[hidden] { display: none; }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 1px 0; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
