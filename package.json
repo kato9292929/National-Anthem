@@ -1,0 +1,27 @@
+{
+  "name": "national-anthem",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/client"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w @na/shared && npm run build -w @na/server && npm run build -w @na/client",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @na/shared && npm run test -w @na/server",
+    "sim": "npm run sim -w @na/server",
+    "dev:server": "npm run dev -w @na/server",
+    "dev:client": "npm run dev -w @na/client",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "typescript": "^7.0.2"
+  }
+}

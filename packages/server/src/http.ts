@@ -1,0 +1,118 @@
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { extname, join, normalize, resolve } from 'node:path';
+import { resolveAllNames, unconfirmedNames, type WorldConfig } from '@na/shared';
+import type { MarketSimulation } from './market/simulation.js';
+
+export interface HttpOptions {
+  config: WorldConfig;
+  configPath: string;
+  sim: MarketSimulation;
+  port: number;
+  /** 指定すると同一オリジンでクライアントの静的ファイルを配信する。 */
+  clientDist?: string | undefined;
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+};
+
+export function createHttpServer(options: HttpOptions) {
+  const { config, configPath, sim } = options;
+
+  const server = createServer((req, res) => {
+    void handle(req, res).catch((error: unknown) => {
+      // 例外は隠さない。500 と本文で出す。
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, 500, { error: 'internal_error', message });
+    });
+  });
+
+  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const url = new URL(req.url ?? '/', `http://localhost:${options.port}`);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204).end();
+      return;
+    }
+
+    switch (`${req.method} ${url.pathname}`) {
+      case 'GET /api/health':
+        sendJson(res, 200, { ok: true, tick: sim.tick, seed: sim.seed });
+        return;
+
+      case 'GET /api/world/config':
+        // 固有名はここから配る。クライアントはリテラルを持たない。
+        sendJson(res, 200, {
+          config,
+          configPath,
+          names: resolveAllNames(config),
+          unconfirmedNames: unconfirmedNames(config),
+        });
+        return;
+
+      case 'GET /api/market/state':
+        sendJson(res, 200, sim.state(Date.now()));
+        return;
+
+      case 'POST /api/market/shock': {
+        const body = await readJson(req);
+        const shock = sim.applyShock({
+          itemId: String((body as Record<string, unknown>)['itemId'] ?? ''),
+          supplyMultiplier: Number((body as Record<string, unknown>)['supplyMultiplier']),
+          durationTicks: Number((body as Record<string, unknown>)['durationTicks']),
+          note: String((body as Record<string, unknown>)['note'] ?? 'manual'),
+        });
+        sendJson(res, 200, shock);
+        return;
+      }
+
+      default:
+        break;
+    }
+
+    if (req.method === 'GET' && options.clientDist) {
+      if (serveStatic(options.clientDist, url.pathname, res)) return;
+    }
+    sendJson(res, 404, { error: 'not_found', path: url.pathname });
+  }
+
+  return server;
+}
+
+function serveStatic(root: string, pathname: string, res: ServerResponse): boolean {
+  const rootDir = resolve(root);
+  const requested = pathname === '/' ? '/index.html' : pathname;
+  const candidate = resolve(join(rootDir, normalize(requested)));
+  if (!candidate.startsWith(rootDir)) return false;
+  if (!existsSync(candidate) || !statSync(candidate).isFile()) return false;
+  res.writeHead(200, { 'content-type': MIME[extname(candidate)] ?? 'application/octet-stream' });
+  createReadStream(candidate).pipe(res);
+  return true;
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body);
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(text),
+  });
+  res.end(text);
+}
+
+async function readJson(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (text.trim() === '') return {};
+  return JSON.parse(text);
+}
