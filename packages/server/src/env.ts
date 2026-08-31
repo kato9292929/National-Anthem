@@ -70,6 +70,15 @@ export const ENV_SPECS: EnvSpec[] = [
     example: 'var',
   },
   {
+    key: 'NA_X402_MOCK',
+    description: '1 で x402 の mock 署名口を使う（区分A の検証用）。実署名は未実装。',
+    requiredFrom: 'M7',
+    provisional: false,
+    secret: false,
+    example: '0',
+    fallback: '0',
+  },
+  {
     key: 'NA_WALLET_PRIVATE_KEY',
     description: '[M3 identity/wallet] 未着手。キー名は仮。',
     requiredFrom: 'M3',

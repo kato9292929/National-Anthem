@@ -1,0 +1,71 @@
+{
+  "$comment": "M4 x402 決済。確定値は加藤さん指定。未指定の値は TBD / confirmed:false のまま置き、使おうとしたら落とす。",
+  "version": "0",
+  "protocol": {
+    "$comment": "native withX402 v2。402 は PAYMENT-REQUIRED ヘッダで来て body は {}。top-level に x402Version:2。v2 の leg は amount。",
+    "x402Version": 2,
+    "scheme": "native",
+    "requirementsHeader": "PAYMENT-REQUIRED",
+    "paymentHeader": "X-PAYMENT",
+    "paymentResponseHeader": "X-PAYMENT-RESPONSE",
+    "legAmountField": "amount",
+    "confirmed": true
+  },
+  "facilitator": {
+    "url": "https://facilitator.payai.network",
+    "provider": "PayAI",
+    "confirmed": true,
+    "verified": false
+  },
+  "feePayer": {
+    "$comment": "feePayer は 402 の accepts[].extra.feePayer から毎回取る。ローテートする値なので config に持たない・キャッシュしない。",
+    "source": "response.accepts[].extra.feePayer",
+    "hardcodedAllowed": false
+  },
+  "rails": [
+    {
+      "id": "solana",
+      "chainKind": "solana",
+      "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "assetLabel": "USDC",
+      "decimals": 6,
+      "payTo": "4s8XQC2WzRfgH8Xiep7ybnCW11VKRCMwxQF6jknx3VPf",
+      "defaultAmount": "10000",
+      "confirmed": true,
+      "verified": false,
+      "eip712Domain": null
+    },
+    {
+      "id": "base",
+      "chainKind": "evm",
+      "network": "TBD",
+      "asset": "TBD",
+      "assetLabel": "USDC",
+      "decimals": 6,
+      "payTo": "TBD",
+      "defaultAmount": "10000",
+      "confirmed": false,
+      "verified": false,
+      "eip712Domain": { "name": "USD Coin", "version": "2", "confirmed": true }
+    },
+    {
+      "id": "evm-secondary",
+      "chainKind": "evm",
+      "network": "TBD",
+      "asset": "TBD",
+      "assetLabel": "TBD",
+      "decimals": 6,
+      "payTo": "TBD",
+      "defaultAmount": "TBD",
+      "confirmed": false,
+      "verified": false,
+      "eip712Domain": null
+    }
+  ],
+  "policy": {
+    "$comment": "レールは資産ごとに分ける。bridge しない。足りないレールで払わない。",
+    "bridgingAllowed": false,
+    "railSelection": "asset-and-network-exact-match"
+  }
+}

@@ -52,6 +52,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `GET /api/world/config` | world config と解決済みの固有名・未確定リスト |
 | `GET /api/market/state` | 現在の market state（品目・価格・在庫・進行中のショック） |
 | `POST /api/market/shock` | 供給ショックの手動フック |
+| `GET /api/x402/status` | x402 の protocol / facilitator / レール状態・署名可否（秘密は出さない） |
 | `GET /api/identity/session` | identity・wallet・standing・room gate の現在値 |
 | `POST /api/identity/rotate` | session wallet の rotate（評判は残る） |
 | `POST /api/identity/reputation` | 評判イベントの記録（開発用フック。実運用では M7 の commission 完了から積む） |
@@ -64,6 +65,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | M1 | サーバ権威の市場シム（決済もLLMも無し） | 済 |
 | M2 | 歩けるグレイボックス・クライアント | 済 |
 | M3 | identity & wallet（standing / room gate） | 済（区分A）／実照会は区分B 未消化 |
+| M4 | x402 決済の配線（native withX402 v2） | 済（区分A）／実 facilitator・実着金は区分B 未消化 |
 | M3 以降 | identity/wallet、x402 決済、Arcium、エージェント自律、commission board | 別指示待ち |
 
 M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
@@ -87,6 +89,26 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 | `config/identity.config.json` の `external_assets` | ERC-8004（Base #55560 / Arc Testnet #845265）、AA 署名鍵、Circle DCW の EVM/Solana wallet。すべて確定値だが `verified: false` |
 | session wallet のアドレス | `mock:` 前置きの仮アドレス。実チェーン上に存在しない。実キー発行は区分B |
 | 認証 | 未実装。ローカルの単一 session identity（仮）で通している |
+| `config/x402.config.json` の facilitator | `https://facilitator.payai.network`（PayAI）。疎通は未検証 |
+| x402 の実署名 | Solana keypair / EVM EIP-712 の実署名は未実装。鍵が無いレールは `unavailableSigner` で落ちる（別レールに振り替えない） |
+| 実レール着金 | 未検証。区分A は mock facilitator と mock リソースサーバで一周を確認 |
+
+## x402（M4）
+
+native withX402 v2。402 は `PAYMENT-REQUIRED` ヘッダで来て body は `{}`、top-level に `x402Version: 2`、
+leg は `amount`。確定値は `config/x402.config.json` に置き、ソースにリテラルを書かない。
+
+- **feePayer はハードコードしない。** 402 の `accepts[].extra.feePayer` から毎回読む。
+  config に置くと検証で落ちる（`feePayer.hardcodedAllowed: false`、rails に `feePayer` キーがあれば例外）。
+- **レールは資産・ネットワークの完全一致でだけ選ぶ。bridge しない。**
+  払えないレールしか無ければ、別レールに振り替えず落ちる。
+- Solana レール（確定）: USDC `EPjFWdd5…yTDt1v` / CAIP-2 `solana:5eykt4…qZKvdp` / payTo `4s8XQC…x3VPf` /
+  0.01 USDC = `"10000"`（6 桁）。
+- Base の EIP-712 domain は `name: "USD Coin"` / `version: "2"`（`"USDC"` にしない）。
+  payTo と asset は未指定なので rail 自体は `TBD`。
+- per-call の件数を成長指標にしない。精算は M7 の commission の account 締めに紐付く。
+
+区分A の一周（mock facilitator + mock リソースサーバ）で、402 → `X-PAYMENT` 再送 → settle 検証まで通る。
 
 ## 実装するときの決まり
 
@@ -108,6 +130,7 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 | `packages/client/src/greybox.ts` | グレイボックスの色・寸法・移動速度。確定した見た目ではない | ビジュアル確定時。この層を差し替える／上に重ねる |
 | `packages/client/src/hud.ts` の `PLACEHOLDER_HUD` | inventory / credits / 接続エージェント数はゼロ固定のプレースホルダ（画面にも「仮値」と出る） | M3（identity/wallet）以降 |
 | `scripts/smoke.mjs` の `FRAME_BUDGET_MS` | ヘッドレス（SwiftShader）向けの緩い予算 50ms | 対象デバイスが決まったら実機基準へ |
+| `config/x402.config.json` の `base` / `evm-secondary` レール | network / asset / payTo が未指定なので `TBD`・`confirmed:false`。使おうとすると落ちる（推測で埋めない） | 値が確定したら config 差し替え |
 | `config/identity.config.json` の `standing` | 初期値・重み・上下限は仮値（`confirmed: false`） | v0 の評判仕様が確定したら |
 | `config/rooms.config.json` | room の固有名（`ROOM_NAME_*`）としきい値は仮値。gate 判定は `provisional: true` を返す | 加藤さん確定時。config 差し替えのみ |
 | `.env.example` の M3 以降のキー | `NA_WALLET_PRIVATE_KEY` / `NA_X402_FACILITATOR_URL` / `NA_ARCIUM_CLUSTER_URL` / `NA_LLM_API_KEY` はキー名自体が仮 | 各マイルストーン着手時 |

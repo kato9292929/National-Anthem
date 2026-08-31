@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { ConfigError } from './errors.js';
 import { validateIdentityConfig, validateRoomsConfig, type IdentityConfig, type RoomsConfig } from './identity.config.types.js';
 import { validateWorldConfig } from './validate.js';
+import { validateX402Config, type X402Config } from './x402.types.js';
 import type { WorldConfig } from './world-config.types.js';
 
 /** リポジトリ内の既定位置。env NA_WORLD_CONFIG で差し替えられる。 */
@@ -95,4 +96,8 @@ export function loadIdentityConfig(env: NodeJS.ProcessEnv = process.env): { valu
 
 export function loadRoomsConfig(env: NodeJS.ProcessEnv = process.env): { value: RoomsConfig; path: string } {
   return loadJsonConfig('config/rooms.config.json', validateRoomsConfig, env);
+}
+
+export function loadX402Config(env: NodeJS.ProcessEnv = process.env): { value: X402Config; path: string } {
+  return loadJsonConfig('config/x402.config.json', validateX402Config, env);
 }

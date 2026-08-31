@@ -1,7 +1,15 @@
 import { resolve } from 'node:path';
-import { seedFrom, unconfirmedNames, type IdentityConfig, type RoomsConfig, type WorldConfig } from '@na/shared';
-import { loadIdentityConfig, loadRoomsConfig, loadWorldConfig } from '@na/shared/node';
+import {
+  seedFrom,
+  unconfirmedNames,
+  type IdentityConfig,
+  type RoomsConfig,
+  type WorldConfig,
+  type X402Config,
+} from '@na/shared';
+import { loadIdentityConfig, loadRoomsConfig, loadWorldConfig, loadX402Config } from '@na/shared/node';
 import { IdentityService } from './identity/service.js';
+import { createX402Service, type X402Service } from './x402/service.js';
 import { FileEventLog, MemoryEventLog, type EventLog } from './store/event-log.js';
 import { CURRENT_MILESTONE, loadDotEnv, resolveEnv, type ResolvedEnv } from './env.js';
 import { MarketSimulation } from './market/simulation.js';
@@ -17,6 +25,8 @@ export interface Runtime {
   roomsConfig: RoomsConfig;
   identity: IdentityService;
   eventLog: EventLog;
+  x402Config: X402Config;
+  x402: X402Service;
   /**
    * 認証は未実装（この段階の範囲外）。ローカルの単一 session identity を仮で立てる。
    * 複数プレイヤーの認証・セッション管理は別途。
@@ -46,6 +56,9 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   const localPlayer = existing ?? identity.createIdentity({ kind: 'human', externalRefs: ['base'] });
   if (!identity.activeWallet(localPlayer.id)) identity.createSessionWallet(localPlayer.id);
 
+  const x402Config = loadX402Config(process.env).value;
+  const x402 = createX402Service(x402Config, process.env);
+
   return {
     config,
     configPath: path,
@@ -56,6 +69,8 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     roomsConfig,
     identity,
     eventLog,
+    x402Config,
+    x402,
     localPlayerId: localPlayer.id,
   };
 }
@@ -85,6 +100,17 @@ export function printStartupLabels(runtime: Runtime): void {
       runtime.roomsConfig.rooms.map((r) => `${r.id}>=${r.minStanding}`).join(', ') + '）',
   );
   console.log('[identity] 認証は未実装。ローカルの単一 session identity で通す（仮）');
+  console.log(
+    `[x402] v${runtime.x402Config.protocol.x402Version} ${runtime.x402Config.protocol.scheme} / ` +
+      `facilitator ${runtime.x402Config.facilitator.url}（未検証・区分B）`,
+  );
+  console.log(
+    `[x402] rails: ` +
+      runtime.x402Config.rails
+        .map((r) => `${r.id}(${r.confirmed ? '確定' : 'TBD'}/${r.verified ? '検証済' : '未検証'})`)
+        .join(', ') + ` / 署名 mode=${runtime.x402.mode}`,
+  );
+  console.log('[x402] feePayer は 402 の extra から毎回取得（config に持たない）');
 }
 
 export function resolveClientDist(cwd = process.cwd()): string {

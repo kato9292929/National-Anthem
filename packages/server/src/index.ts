@@ -19,6 +19,7 @@ function main(): void {
     identity: runtime.identity,
     roomsConfig: runtime.roomsConfig,
     localPlayerId: runtime.localPlayerId,
+    x402Status: () => runtime.x402.status(),
     port,
     clientDist,
   });
