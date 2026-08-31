@@ -12,17 +12,39 @@
     "no_reuse": {
       "source_project": "ancient world",
       "rule_ja": "ancient world プロジェクトの資産・データ（aw-data）・禁則（生成画像や復元図を使わない等）は流用しない。共有するのは美学のインスピレーションのみ。",
-      "shared": ["aesthetic_inspiration"],
-      "not_shared": ["assets", "aw-data", "content_restrictions"]
+      "shared": [
+        "aesthetic_inspiration"
+      ],
+      "not_shared": [
+        "assets",
+        "aw-data",
+        "content_restrictions"
+      ]
     },
     "no_invented_proper_nouns_ja": "加藤さん確定まで固有名を推測で埋めない。仮値で通し、未確定ラベル（confirmed: false）を残す。",
     "participant_model_unchanged_ja": "v0 の参加者モデル（人間／エージェントが同じ板）を変えない。世界設定を重ねるだけ。"
   },
   "naming": {
-    "market": { "value": "MARKET_NAME", "confirmed": false, "owner": "kato" },
-    "district": { "value": "DISTRICT_NAME", "confirmed": false, "owner": "kato" },
-    "npc": { "value": "NPC_NAME", "confirmed": false, "owner": "kato" },
-    "stall": { "value": "STALL_NAME", "confirmed": false, "owner": "kato" }
+    "market": {
+      "value": "MARKET_NAME",
+      "confirmed": false,
+      "owner": "kato"
+    },
+    "district": {
+      "value": "DISTRICT_NAME",
+      "confirmed": false,
+      "owner": "kato"
+    },
+    "npc": {
+      "value": "NPC_NAME",
+      "confirmed": false,
+      "owner": "kato"
+    },
+    "stall": {
+      "value": "STALL_NAME",
+      "confirmed": false,
+      "owner": "kato"
+    }
   },
   "core_mapping": [
     {
@@ -60,48 +82,160 @@
       {
         "id": "timber",
         "label_ja": "木材",
-        "sources_ja": ["レバノン杉", "アマヌス山地方面"]
+        "sources_ja": [
+          "レバノン杉",
+          "アマヌス山地方面"
+        ]
       },
       {
         "id": "metal",
         "label_ja": "金属",
-        "sources_ja": ["銅＝マガン／アナトリア方面", "錫＝東方ルート"]
+        "sources_ja": [
+          "銅＝マガン／アナトリア方面",
+          "錫＝東方ルート"
+        ]
       },
       {
         "id": "stone_gem",
         "label_ja": "石・宝石",
-        "sources_ja": ["ラピスラズリ＝バダフシャン方面", "紅玉髄＝インダス方面"]
+        "sources_ja": [
+          "ラピスラズリ＝バダフシャン方面",
+          "紅玉髄＝インダス方面"
+        ]
       }
     ],
     "exports": [
-      { "id": "textile", "label_ja": "繊維・織物" },
-      { "id": "foodstuff", "label_ja": "穀物・ナツメヤシ等の食料" },
-      { "id": "craft", "label_ja": "完成品・工芸" }
+      {
+        "id": "textile",
+        "label_ja": "繊維・織物"
+      },
+      {
+        "id": "foodstuff",
+        "label_ja": "穀物・ナツメヤシ等の食料"
+      },
+      {
+        "id": "craft",
+        "label_ja": "完成品・工芸"
+      }
     ]
   },
   "trade_partners": [
-    { "id": "dilmun", "label_ja": "ディルムン", "role_ja": "湾岸の中継地", "attested": true },
-    { "id": "magan", "label_ja": "マガン", "role_ja": "銅の産地", "attested": true },
-    { "id": "meluhha", "label_ja": "メルッハ", "role_ja": "インダス方面", "attested": true },
-    { "id": "anatolia", "label_ja": "アナトリア", "role_ja": "金属・木材方面", "attested": true },
-    { "id": "egypt", "label_ja": "エジプト", "role_ja": "遠隔地の交易相手", "attested": true }
+    {
+      "id": "dilmun",
+      "label_ja": "ディルムン",
+      "role_ja": "湾岸の中継地",
+      "attested": true
+    },
+    {
+      "id": "magan",
+      "label_ja": "マガン",
+      "role_ja": "銅の産地",
+      "attested": true
+    },
+    {
+      "id": "meluhha",
+      "label_ja": "メルッハ",
+      "role_ja": "インダス方面",
+      "attested": true
+    },
+    {
+      "id": "anatolia",
+      "label_ja": "アナトリア",
+      "role_ja": "金属・木材方面",
+      "attested": true
+    },
+    {
+      "id": "egypt",
+      "label_ja": "エジプト",
+      "role_ja": "遠隔地の交易相手",
+      "attested": true
+    }
   ],
   "market_logic_ja": "繊維・穀物を輸出し、木材・金属・石を輸入する。",
   "participants": [
     {
       "id": "human",
       "world_role_ja": "商人（principal）",
-      "can_be_ja": ["principal として委託する", "板の売り手として立つ"],
+      "can_be_ja": [
+        "principal として委託する",
+        "板の売り手として立つ"
+      ],
       "board": "shared"
     },
     {
       "id": "agent",
       "world_role_ja": "交易代理人（šamallum）",
-      "capabilities": ["quoting", "order_intake", "settlement"],
+      "capabilities": [
+        "quoting",
+        "order_intake",
+        "settlement"
+      ],
       "unattended": true,
       "board": "shared"
     }
   ],
+  "economy": {
+    "$comment": "差別化指示書 §3「経済の重心」の確定分。正典は docs/world-spec-v0.md §4。",
+    "center": "trade-agency-records",
+    "center_label_ja": "交易代理＋記録（commission / consignment ＋ 封印精算）",
+    "confirmed": true,
+    "modules": {
+      "primary": "commission-board",
+      "secondary": "goods-storefront"
+    },
+    "module_detail": [
+      {
+        "id": "commission-board",
+        "rank": "primary",
+        "label_ja": "委託・受発注ボード",
+        "flow_ja": "principal が委託を出し、代理エージェントが遠隔交易の各レグを実行し、封印精算で account を締める。",
+        "v0_source": "M7",
+        "v0_note_ja": "v0 の M7（バウンティ板・escrow・arbitration）を主モジュールに昇格。"
+      },
+      {
+        "id": "goods-storefront",
+        "rank": "secondary",
+        "label_ja": "物販ストアフロント（stall 買い物）",
+        "categories_ref": "stall_categories",
+        "v0_note_ja": "v0 の物販を副モジュールとして分離実装。差別化指示書の『物販と受発注を別モジュールで分離実装』の順位を確定した形。",
+        "subordinate_to": "commission-board"
+      }
+    ],
+    "core_binding": [
+      {
+        "role": "principal",
+        "assigned_to_ja": "人間／エージェント（tamkārum）",
+        "core_mapping_ref": "tamkarum_shamallum"
+      },
+      {
+        "role": "execution",
+        "assigned_to_ja": "代理エージェント（šamallum）",
+        "core_mapping_ref": "tamkarum_shamallum"
+      },
+      {
+        "role": "settlement",
+        "assigned_to_ja": "封印タブレット（case tablet）＝検証機密の決済（Arcium MXE、payment_valid のみ）",
+        "core_mapping_ref": "case_tablet"
+      },
+      {
+        "role": "standing",
+        "assigned_to_ja": "円筒印章の履歴（完了・精算済み委託の蓄積）が room の開閉に効く",
+        "core_mapping_ref": "cylinder_seal"
+      },
+      {
+        "role": "escrow_arbitration",
+        "assigned_to_ja": "委託の記録と係争解決",
+        "core_mapping_ref": "sealed_tablet_account"
+      }
+    ],
+    "commission_flow": {
+      "$comment": "実装時に v0 の範囲で詰める。推測で仕様を埋めない。",
+      "confirmed": false,
+      "legs": "TBD",
+      "remote_handling": "TBD",
+      "settlement_unit": "TBD"
+    }
+  },
   "writing_premise_ja": "二言語（シュメール語／アッカド語）で記録する必要から文字が発達した史実は、取引をエージェント可読の記録層に落とす動機付けとして world 側に置ける。機能は v0 のまま。",
   "presentation": {
     "$comment": "範囲外（加藤さん側）。CC は差し替え可能な形だけ用意し、値は入れない。ロジック側に見た目を散らさない。",
