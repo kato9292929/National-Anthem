@@ -6,11 +6,13 @@ import {
   type RoomsConfig,
   type WorldConfig,
   type AgentConfig,
+  type CommissionConfig,
   type PrivacyConfig,
   type X402Config,
 } from '@na/shared';
 import {
   loadAgentConfig,
+  loadCommissionConfig,
   loadIdentityConfig,
   loadPrivacyConfig,
   loadRoomsConfig,
@@ -19,6 +21,8 @@ import {
 } from '@na/shared/node';
 import { IdentityService } from './identity/service.js';
 import { evaluateGates, type GateResult } from './agent/gate.js';
+import { CommissionBoard } from './commission/board.js';
+import { GoodsStorefront } from './commission/storefront.js';
 import { loadMeasurement } from './agent/dry-run.js';
 import { createHttpMxeClient, createMockMxe, PrivateGateway } from './privacy/gateway.js';
 import { PaymentRecordStore } from './privacy/records.js';
@@ -47,6 +51,9 @@ export interface Runtime {
   gatewayMode: 'http' | 'mock';
   agentConfig: AgentConfig;
   agentGate: GateResult;
+  commissionConfig: CommissionConfig;
+  board: CommissionBoard;
+  storefront: GoodsStorefront;
   /**
    * 認証は未実装（この段階の範囲外）。ローカルの単一 session identity を仮で立てる。
    * 複数プレイヤーの認証・セッション管理は別途。
@@ -88,6 +95,16 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   );
   const paymentRecords = new PaymentRecordStore(eventLog, privacyConfig.recording);
 
+  const commissionConfig = loadCommissionConfig(process.env).value;
+  const board = new CommissionBoard({
+    config: commissionConfig,
+    world: config,
+    identity,
+    log: eventLog,
+    paymentRecords,
+  });
+  const storefront = new GoodsStorefront({ world: config, sim, log: eventLog });
+
   const agentConfig = loadAgentConfig(process.env).value;
   const agentGate = evaluateGates(agentConfig, loadMeasurement(agentConfig.run.measurementPath));
 
@@ -109,6 +126,9 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     gatewayMode,
     agentConfig,
     agentGate,
+    commissionConfig,
+    board,
+    storefront,
     localPlayerId: localPlayer.id,
   };
 }
@@ -163,6 +183,11 @@ export function printStartupLabels(runtime: Runtime): void {
       (runtime.agentGate.satisfied
         ? ''
         : ` — ${runtime.agentGate.blockers.map((b) => b.id).join(', ')}（schedule では回さない）`),
+  );
+  console.log(
+    `[commission] 主 ${runtime.commissionConfig.modules.primary} / 副 ${runtime.commissionConfig.modules.secondary}` +
+      `（commission_flow は未確定: legs=${runtime.commissionConfig.flow.legs} / ` +
+      `remote=${runtime.commissionConfig.flow.remote_handling} / unit=${runtime.commissionConfig.flow.settlement_unit}）`,
   );
   console.log(
     `[agent] spend cap ${runtime.agentConfig.budget.hardCapUsd} USD / warn ${runtime.agentConfig.budget.warnAtUsd} USD / auto-reload なし`,

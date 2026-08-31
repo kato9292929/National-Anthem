@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import type { MarketState } from '@na/shared';
-import { fetchSession, fetchWorld, pollMarketState, pollSession, type SessionPayload, type WorldPayload } from './api.js';
+import {
+  fetchCommissionBoard,
+  fetchSession,
+  fetchWorld,
+  pollMarketState,
+  pollSession,
+  type CommissionBoardPayload,
+  type SessionPayload,
+  type WorldPayload,
+} from './api.js';
 import { FirstPersonController } from './controller.js';
 import { GREYBOX } from './greybox.js';
 import { createHud } from './hud.js';
@@ -16,6 +25,7 @@ import { buildScene, drawStallLabel, setGateOpen, type StallObject } from './sce
 
 const MARKET_POLL_MS = 1000;
 const SESSION_POLL_MS = 1000;
+const BOARD_POLL_MS = 2000;
 /** これを超えて更新が来なければ「更新停止」と表示する。 */
 const STALE_AFTER_MS = 4000;
 
@@ -27,6 +37,7 @@ interface DebugHandle {
   averageFrameMs: number;
   fps: number;
   unconfirmedNames: string[];
+  contextLost: () => boolean;
   gates: () => { roomId: string; open: boolean; required: number; x: number; z: number }[];
   standing: () => number | null;
   stallPositions: { categoryId: string; x: number; z: number }[];
@@ -81,6 +92,17 @@ async function main(): Promise<void> {
   const built = buildScene(layout, gateSpecs);
   const hud = createHud(hudRoot, world);
 
+  // WebGL コンテキストが落ちたら黙って黒画面のままにしない。
+  let contextLost = false;
+  canvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    contextLost = true;
+    showError('WebGL コンテキストが失われた。ページを再読み込みする必要がある');
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    contextLost = false;
+  });
+
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
@@ -125,6 +147,18 @@ async function main(): Promise<void> {
     (next) => applySession(next),
     (error) => showError(`session を取得できない: ${error.message}`),
   );
+
+  // commission board（主モジュール）の状態。市場と同じくサーバが正。
+  let board: CommissionBoardPayload | null = null;
+  const refreshBoard = (): void => {
+    void fetchCommissionBoard()
+      .then((next) => {
+        board = next;
+      })
+      .catch((error: unknown) => showError(`commission board を取得できない: ${(error as Error).message}`));
+  };
+  refreshBoard();
+  window.setInterval(refreshBoard, BOARD_POLL_MS);
 
   let market: MarketState | null = null;
   let lastMarketAt = 0;
@@ -178,6 +212,7 @@ async function main(): Promise<void> {
     hud.update({
       world,
       session,
+      board,
       market,
       focused,
       fps,
@@ -203,6 +238,7 @@ async function main(): Promise<void> {
       return fps;
     },
     unconfirmedNames: world.unconfirmedNames,
+    contextLost: () => contextLost,
     gates: () =>
       built.gates.map((g) => ({
         roomId: g.roomId,

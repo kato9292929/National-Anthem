@@ -52,6 +52,24 @@ export interface SessionPayload {
   notes: { auth: string; walletVerification: string };
 }
 
+export interface CommissionBoardPayload {
+  modules: { primary: string; secondary: string };
+  flow: { legs: string; remote_handling: string; settlement_unit: string; confirmed: boolean };
+  escrow: { unit: string; confirmed: boolean };
+  commissions: {
+    id: string;
+    itemId: string;
+    state: string;
+    provisional: boolean;
+    amount: string;
+    escrow: { state: string } | null;
+  }[];
+}
+
+export function fetchCommissionBoard(): Promise<CommissionBoardPayload> {
+  return getJson<CommissionBoardPayload>('/api/commission/board');
+}
+
 export function fetchSession(): Promise<SessionPayload> {
   return getJson<SessionPayload>('/api/identity/session');
 }

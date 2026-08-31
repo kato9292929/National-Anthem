@@ -18,6 +18,7 @@ html, body { margin: 0; height: 100%; background: #1b1c1e; color: #e6e7e9;
 #panel-hud { grid-column: 1; grid-row: 3; align-self: end; }
 #panel-stats { grid-column: 3; grid-row: 3; align-self: end; }
 #panel-identity { grid-column: 3; grid-row: 2; align-self: start; }
+#panel-board { grid-column: 1; grid-row: 2; align-self: start; }
 #crosshair { grid-column: 2; grid-row: 2; align-self: center; justify-self: center;
   width: 6px; height: 6px; border: 1px solid #b9bcc0; border-radius: 50%; }
 #prompt { position: fixed; left: 50%; top: 62%; transform: translateX(-50%);

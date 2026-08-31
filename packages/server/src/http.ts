@@ -16,6 +16,10 @@ export interface HttpOptions {
   x402Status: () => unknown;
   privacyStatus: () => unknown;
   agentStatus: () => unknown;
+  commissionBoard: () => unknown;
+  commissionAction: (body: Record<string, unknown>) => Promise<unknown>;
+  storefrontListing: () => unknown;
+  storefrontBuy: (body: Record<string, unknown>) => unknown;
   port: number;
   /** 指定すると同一オリジンでクライアントの静的ファイルを配信する。 */
   clientDist?: string | undefined;
@@ -95,6 +99,26 @@ export function createHttpServer(options: HttpOptions) {
         sendJson(res, 200, sim.state(Date.now()));
         return;
 
+      case 'GET /api/commission/board':
+        sendJson(res, 200, options.commissionBoard());
+        return;
+
+      case 'POST /api/commission/action': {
+        const body = (await readJson(req)) as Record<string, unknown>;
+        sendJson(res, 200, await options.commissionAction(body));
+        return;
+      }
+
+      case 'GET /api/storefront/listing':
+        sendJson(res, 200, options.storefrontListing());
+        return;
+
+      case 'POST /api/storefront/buy': {
+        const body = (await readJson(req)) as Record<string, unknown>;
+        sendJson(res, 200, options.storefrontBuy(body));
+        return;
+      }
+
       case 'GET /api/agent/status':
         sendJson(res, 200, options.agentStatus());
         return;
@@ -116,6 +140,14 @@ export function createHttpServer(options: HttpOptions) {
         if (!wallet) throw new Error('active な wallet が無い');
         const rotated = identity.rotateWallet(wallet.id, 'api');
         sendJson(res, 200, { rotated, standing: identity.standing(localPlayerId) });
+        return;
+      }
+
+      case 'POST /api/identity/agent': {
+        // 開発用フック: ローカル principal の下に代理エージェントの identity を立てる。
+        const agent = identity.createIdentity({ kind: 'agent', principalId: localPlayerId });
+        const wallet = identity.createSessionWallet(agent.id);
+        sendJson(res, 200, { agent, wallet, standing: identity.standing(agent.id) });
         return;
       }
 

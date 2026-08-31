@@ -53,6 +53,10 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `GET /api/world/config` | world config と解決済みの固有名・未確定リスト |
 | `GET /api/market/state` | 現在の market state（品目・価格・在庫・進行中のショック） |
 | `POST /api/market/shock` | 供給ショックの手動フック |
+| `GET /api/commission/board` | 委託の一覧・escrow・係争・主/副モジュールの順位 |
+| `POST /api/commission/action` | 委託の操作（open / propose / agree / fund / leg / settle / refund / dispute / resolve） |
+| `GET /api/storefront/listing` | 物販（副モジュール）の品揃え。価格・在庫は M1 の市場状態 |
+| `POST /api/storefront/buy` | 物販の購入 |
 | `GET /api/agent/status` | モデル・キャッシュ・tick・予算・稼働前ゲートの判定（秘密は出さない） |
 | `GET /api/privacy/status` | Gateway の状態・記録方針・claim の線（秘密は出さない） |
 | `GET /api/x402/status` | x402 の protocol / facilitator / レール状態・署名可否（秘密は出さない） |
@@ -71,6 +75,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | M4 | x402 決済の配線（native withX402 v2） | 済（区分A）／実 facilitator・実着金は区分B 未消化 |
 | M5 | privacy 層（x402 Private Gateway / Arcium MXE） | 済（区分A）／実 MXE 投入・実 RPC は区分B 未消化 |
 | M6 | エージェント自律（LLM） | 実装済・**稼働前ゲート未達のため schedule では回していない** |
+| M7 | commission board（主）＋escrow＋arbitration＋物販（副） | 済（区分A）／`commission_flow` は未確定のまま |
 | M3 以降 | identity/wallet、x402 決済、Arcium、エージェント自律、commission board | 別指示待ち |
 
 M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
@@ -157,6 +162,25 @@ leg は `amount`。確定値は `config/x402.config.json` に置き、ソース�
 
 料金表は claude-api の一覧（as_of 2026-06-24）を config に置いている。変動するので `verified: false`。
 
+## commission board（M7・経済の重心）
+
+主モジュールは commission board、物販ストアフロントは副モジュール（`config/commission.config.json`）。
+principal が委託を出す → 代理エージェントが各レグを実行する → **封印精算で account を締める**。
+
+- **締結は両者合意でのみ確定する。** 片方の合意では state が進まない。
+- **escrow は release / refund の両方を持つ。** 締結前には積まない。二重 release / 二重 refund をしない。
+  release は封印精算の検証（`payment_valid`）が通ってからで、検証の中身は受け取らない（M5）。
+- **arbitration は release / refund の二択。** 分割は未定義なので実装しない。当事者は arbiter になれない。
+- **commission の結末が standing に積まれる**（M3 へ接続）。完了は加点、不履行は減点、係争は勝敗で±。
+- `commission_flow`（legs / remote_handling / settlement_unit）は **未確定のまま**。
+  委託は与えられたレグの数だけを持ち、`provisional: true` を付けて回る。金額は最小単位の整数文字列、
+  単位は `TBD`。推測で埋めていない。
+- 物販は主モジュールを参照しない（構造としてもテストで固定している）。
+
+区分A の一周は `npm run smoke` が実サーバに対して通す:
+委託 → 片方の合意では締結しない → 両者合意で締結 → escrow → レグ → 封印精算 → release →
+`payment_valid` だけの記録が残る。
+
 ## 実装するときの決まり
 
 - 固有名（市場名・地区名・NPC・stall）はソースにリテラルで書かず、`world/world.config.json` から引く。
@@ -180,6 +204,7 @@ leg は `amount`。確定値は `config/x402.config.json` に置き、ソース�
 | `config/x402.config.json` の `base` / `evm-secondary` レール | network / asset / payTo が未指定なので `TBD`・`confirmed:false`。使おうとすると落ちる（推測で埋めない） | 値が確定したら config 差し替え |
 | `config/identity.config.json` の `standing` | 初期値・重み・上下限は仮値（`confirmed: false`） | v0 の評判仕様が確定したら |
 | `config/rooms.config.json` | room の固有名（`ROOM_NAME_*`）としきい値は仮値。gate 判定は `provisional: true` を返す | 加藤さん確定時。config 差し替えのみ |
+| `config/commission.config.json` の `flow` / `escrow.unit` / `arbitration` / `reputation` | 精算単位・レグ・遠隔地の扱い・重み対応はすべて仮値（`confirmed: false`）。委託は `provisional: true` で回る | v0 の commission_flow が確定したら |
 | `config/agent.config.json` の `cadence` | tick 頻度・1 回あたり入力トークン・tick あたり呼び出し数はすべて null（未確定） | 加藤さん確定時。埋まるまでゲートが開かない |
 | `packages/server/src/agent/dry-run.ts` の `ASSUMED_OUTPUT_TOKENS_PER_CALL` | 出力トークンの想定値 320 は仮値 | 実測（区分B）で置き換える |
 | `.env.example` の M3 以降のキー | `NA_WALLET_PRIVATE_KEY` / `NA_X402_FACILITATOR_URL` / `NA_ARCIUM_CLUSTER_URL` / `NA_LLM_API_KEY` はキー名自体が仮 | 各マイルストーン着手時 |

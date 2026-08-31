@@ -5,6 +5,7 @@ import { ConfigError } from './errors.js';
 import { validateIdentityConfig, validateRoomsConfig, type IdentityConfig, type RoomsConfig } from './identity.config.types.js';
 import { validateWorldConfig } from './validate.js';
 import { validateAgentConfig, type AgentConfig } from './agent.types.js';
+import { validateCommissionConfig, type CommissionConfig } from './commission.types.js';
 import { validatePrivacyConfig, type PrivacyConfig } from './privacy.types.js';
 import { validateX402Config, type X402Config } from './x402.types.js';
 import type { WorldConfig } from './world-config.types.js';
@@ -110,4 +111,11 @@ export function loadPrivacyConfig(env: NodeJS.ProcessEnv = process.env): { value
 
 export function loadAgentConfig(env: NodeJS.ProcessEnv = process.env): { value: AgentConfig; path: string } {
   return loadJsonConfig('config/agent.config.json', validateAgentConfig, env);
+}
+
+export function loadCommissionConfig(env: NodeJS.ProcessEnv = process.env): {
+  value: CommissionConfig;
+  path: string;
+} {
+  return loadJsonConfig('config/commission.config.json', validateCommissionConfig, env);
 }

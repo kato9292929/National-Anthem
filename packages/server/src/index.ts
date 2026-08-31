@@ -1,3 +1,4 @@
+import { runCommissionAction } from './commission/actions.js';
 import { createHttpServer } from './http.js';
 import { createRuntime, printStartupLabels, resolveClientDist } from './runtime.js';
 
@@ -20,6 +21,39 @@ function main(): void {
     roomsConfig: runtime.roomsConfig,
     localPlayerId: runtime.localPlayerId,
     x402Status: () => runtime.x402.status(),
+    commissionBoard: () => ({
+      modules: runtime.commissionConfig.modules,
+      flow: runtime.commissionConfig.flow,
+      escrow: { unit: runtime.commissionConfig.escrow.unit, confirmed: runtime.commissionConfig.escrow.confirmed },
+      commissions: runtime.board.list().map((commission) => ({
+        ...commission,
+        escrow: runtime.board.escrow.get(commission.id),
+        dispute: runtime.board.disputeFor(commission.id),
+      })),
+      notes: {
+        center: '経済の重心は交易代理＋記録。物販は副モジュール',
+        flow: 'legs / remote_handling / settlement_unit は未確定。委託は provisional で回る',
+        settlement: '精算は封印精算（Gateway 経由）。返るのは payment_valid のみ',
+      },
+    }),
+    commissionAction: (body) =>
+      runCommissionAction({
+        board: runtime.board,
+        gateway: runtime.gateway,
+        localPlayerId: runtime.localPlayerId,
+        body,
+      }),
+    storefrontListing: () => ({
+      rank: runtime.storefront.rank,
+      subordinateTo: runtime.storefront.subordinateTo,
+      items: runtime.storefront.listing(),
+    }),
+    storefrontBuy: (body) =>
+      runtime.storefront.buy({
+        buyerId: String(body['buyerId'] ?? runtime.localPlayerId),
+        itemId: String(body['itemId'] ?? ''),
+        quantity: Number(body['quantity'] ?? 1),
+      }),
     agentStatus: () => ({
       models: runtime.agentConfig.models,
       caching: runtime.agentConfig.caching,

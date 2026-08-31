@@ -26,6 +26,10 @@ async function withServer<T>(fn: (base: string, sim: MarketSimulation) => Promis
     x402Status: () => ({ mode: 'unavailable' }),
     privacyStatus: () => ({ mode: 'mock' }),
     agentStatus: () => ({ gate: { satisfied: false } }),
+    commissionBoard: () => ({ modules: { primary: 'commission-board' } }),
+    commissionAction: () => Promise.resolve({ ok: true }),
+    storefrontListing: () => ({ rank: 'secondary' }),
+    storefrontBuy: () => ({ ok: true }),
     port: 0,
   });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));

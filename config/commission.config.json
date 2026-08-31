@@ -1,0 +1,36 @@
+{
+  "$comment": "M7 commission board（主）＋ escrow ＋ arbitration ＋ 物販（副）。flow の詳細は v0 未確定なので TBD のまま。",
+  "version": "0",
+  "modules": {
+    "primary": "commission-board",
+    "secondary": "goods-storefront",
+    "confirmed": true
+  },
+  "flow": {
+    "$comment": "world.config.json の economy.commission_flow と同じ。推測で埋めない。",
+    "legs": "TBD",
+    "remote_handling": "TBD",
+    "settlement_unit": "TBD",
+    "confirmed": false
+  },
+  "escrow": {
+    "$comment": "【仮値】精算単位が未確定なので、金額は最小単位の整数文字列として扱い、単位は TBD のまま持ち回る。",
+    "unit": "TBD",
+    "requireBothPartiesToAgree": true,
+    "releaseRequiresPaymentValid": true,
+    "confirmed": false
+  },
+  "arbitration": {
+    "$comment": "【仮値】係争の解決は release / refund の二択。分割は未定義なので実装しない。",
+    "outcomes": ["release", "refund"],
+    "requiresArbiter": true,
+    "confirmed": false
+  },
+  "reputation": {
+    "$comment": "commission の結末を M3 の評判イベントへ写す対応表。重みは identity.config.json 側。",
+    "onSettled": { "agent": "commission_completed", "principal": "payment_settled" },
+    "onRefundedForNonDelivery": { "agent": "counterparty_vanished" },
+    "onDisputeResolved": { "winner": "dispute_won", "loser": "dispute_lost" },
+    "confirmed": false
+  }
+}

@@ -1,5 +1,5 @@
 import type { MarketItem, MarketItemState, MarketState } from '@na/shared';
-import type { SessionPayload, WorldPayload } from './api.js';
+import type { CommissionBoardPayload, SessionPayload, WorldPayload } from './api.js';
 import type { StallObject } from './scene.js';
 
 /**
@@ -19,6 +19,7 @@ export interface HudHandles {
   update(input: {
     world: WorldPayload;
     session: SessionPayload | null;
+    board: CommissionBoardPayload | null;
     market: MarketState | null;
     focused: StallObject | null;
     fps: number;
@@ -33,6 +34,10 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
       <h2>相場<span class="dim"> — server (M1)</span></h2>
       <table id="market-table"><tbody></tbody></table>
       <div class="row dim"><span id="market-tick"></span><span id="market-seed"></span></div>
+    </section>
+    <section class="panel" id="panel-board">
+      <h2>commission board<span class="dim"> — 主モジュール</span></h2>
+      <div id="board-body" class="dim">board 待ち</div>
     </section>
     <section class="panel" id="panel-focus"><h2>stall</h2><div id="focus-body" class="dim">通路を歩いて stall の前に立つ</div></section>
     <section class="panel" id="panel-hud">
@@ -70,7 +75,7 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
     world.unconfirmedNames.length > 0 ? `固有名 ${world.unconfirmedNames.length} 件 / presentation` : 'presentation';
 
   return {
-    update({ world: payload, session, market, focused, fps, frameMs, stale }) {
+    update({ world: payload, session, board, market, focused, fps, frameMs, stale }) {
       el('stat-fps').textContent = fps.toFixed(0);
       el('stat-frame').textContent = `${frameMs.toFixed(1)}ms`;
 
@@ -88,6 +93,7 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
 
       el('focus-body').innerHTML = renderFocus(payload, market, focused);
       el('identity-body').innerHTML = renderIdentity(session);
+      el('board-body').innerHTML = renderBoard(board);
     },
   };
 }
@@ -119,6 +125,26 @@ function renderFocus(world: WorldPayload, market: MarketState | null, focused: S
     <div class="row"><span class="dim">在庫</span><span class="num">${state ? Math.round(state.stock) : '—'}</span></div>
     <div class="row"><span class="dim">基準価格</span><span class="num">${item ? item.basePrice.toFixed(2) : '—'}</span></div>
     ${state?.shock ? `<div class="row shock"><span>供給ショック</span><span>x${state.shock.supplyMultiplier} (${state.shock.origin})</span></div>` : ''}
+  `;
+}
+
+function renderBoard(board: CommissionBoardPayload | null): string {
+  if (!board) return '<span class="dim">board 待ち</span>';
+  const counts = new Map<string, number>();
+  for (const commission of board.commissions) {
+    counts.set(commission.state, (counts.get(commission.state) ?? 0) + 1);
+  }
+  const rows =
+    counts.size === 0
+      ? '<div class="row dim"><span>委託</span><span>まだ無い</span></div>'
+      : [...counts.entries()]
+          .map(([state, count]) => `<div class="row"><span class="dim">${escapeHtml(state)}</span><span>${count}</span></div>`)
+          .join('');
+  return `
+    <div class="row"><span class="dim">主</span><span>${escapeHtml(board.modules.primary)}</span></div>
+    <div class="row"><span class="dim">副</span><span>${escapeHtml(board.modules.secondary)}</span></div>
+    ${rows}
+    <div class="row"><span class="dim">flow</span><span>legs ${escapeHtml(board.flow.legs)} / unit ${escapeHtml(board.escrow.unit)} <span class="tag">未確定</span></span></div>
   `;
 }
 

@@ -165,8 +165,91 @@ try {
     : `${config.naming.market.value}（未確定）`;
   check(hudName.includes(expectedName), 'HUD の市場名は config 由来（未確定はラベル付き）', hudName.replace(/\n/g, ' '));
 
+  // 描画が健全なうちに確認用の画面を残す（通路の南端から市場全体）。
+  await page.evaluate(() => window.__na_debug.moveTo(0, 11));
+  await sleep(500);
+  mkdirSync('artifacts', { recursive: true });
+  await page.screenshot({ path: 'artifacts/m2-greybox.png' });
+  console.log('screenshot: artifacts/m2-greybox.png');
+
+  // M7: commission board の一周（開設 → 両者合意 → escrow → レグ → 封印精算 → standing）。
+  const post = async (body) => {
+    const res = await fetch(`${BASE}/api/commission/action`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`commission action 失敗 (${body.action}): ${JSON.stringify(json)}`);
+    return json;
+  };
+
+  const board0 = await (await fetch(`${BASE}/api/commission/board`)).json();
+  check(
+    board0.modules.primary === 'commission-board' && board0.modules.secondary === 'goods-storefront',
+    '経済の重心は commission board（物販は副）',
+    `flow=${board0.flow.legs}/${board0.flow.settlement_unit}（未確定）`,
+  );
+
+  const session0 = await (await fetch(`${BASE}/api/identity/session`)).json();
+  const principalId = session0.identity.id;
+  const agentRes = await fetch(`${BASE}/api/identity/agent`, { method: 'POST' });
+  const { agent, standing: agentStanding0 } = await agentRes.json();
+  const itemId = config.stall_categories.imports[0].id;
+  const partnerId = config.trade_partners[0].id;
+
+  const commission = await post({
+    action: 'open',
+    principalId,
+    itemId,
+    quantity: 2,
+    amount: '10000',
+    legs: [{ partnerId, note: '往路' }],
+  });
+  check(commission.state === 'open' && commission.provisional === true, '委託が出せる（条件は仮）', commission.id);
+
+  await post({ action: 'propose', commissionId: commission.id, agentId: agent.id });
+  const halfAgreed = await post({ action: 'agree', commissionId: commission.id, partyId: principalId });
+  check(halfAgreed.state === 'open', '片方の合意では締結しない', `state=${halfAgreed.state}`);
+  const agreed = await post({ action: 'agree', commissionId: commission.id, partyId: agent.id });
+  check(agreed.state === 'agreed', '両者合意で締結する', `state=${agreed.state}`);
+
+  const funded = await post({ action: 'fund', commissionId: commission.id });
+  check(funded.state === 'funded', 'escrow を積める');
+
+  const delivered = await post({ action: 'leg', commissionId: commission.id, index: 0, result: 'done' });
+  check(delivered.state === 'delivered', 'レグの実行が納品まで進む');
+
+  const settled = await post({ action: 'settle', commissionId: commission.id });
+  const boardAfter = await (await fetch(`${BASE}/api/commission/board`)).json();
+  const row = boardAfter.commissions.find((c) => c.id === commission.id);
+  check(
+    settled.state === 'settled' && row.escrow.state === 'released',
+    '封印精算（payment_valid のみ）を通って escrow が release される',
+  );
+
+  const privacyAfter = await (await fetch(`${BASE}/api/privacy/status`)).json();
+  check(privacyAfter.records >= 1, '精算が payment_valid だけの記録として残る', `records=${privacyAfter.records}`);
+
+  const agentAfter = await (await fetch(`${BASE}/api/agent/status`)).json();
+  check(
+    agentAfter.gate.satisfied === false && agentAfter.gate.blockers.some((b) => b.id === 'cadence'),
+    'エージェントの稼働前ゲートは未達のまま（schedule で回さない）',
+    agentAfter.gate.blockers.map((b) => b.id).join(', '),
+  );
+
+  const storefront = await (await fetch(`${BASE}/api/storefront/listing`)).json();
+  check(
+    storefront.rank === 'secondary' && storefront.subordinateTo === 'commission-board',
+    '物販は副モジュールとして分離されている',
+    `${storefront.items.length} 品目`,
+  );
+
+  void agentStanding0;
+
+  mkdirSync('artifacts', { recursive: true });
   // 確認用に通路の南端から市場全体を撮る。
-  await page.evaluate(() => window.__na_debug.moveTo(0, 13));
+  await page.evaluate(() => window.__na_debug.moveTo(0, 11));
   await sleep(400);
   // M3: standing が room gate に効く（mock で一周）。
   const gatesBefore = await page.evaluate(() => window.__na_debug.gates());
@@ -242,9 +325,10 @@ try {
     `standing=${afterRotate.standing}`,
   );
 
-  mkdirSync('artifacts', { recursive: true });
-  await page.screenshot({ path: 'artifacts/m2-greybox.png' });
-  console.log('screenshot: artifacts/m2-greybox.png');
+  check(
+    (await page.evaluate(() => window.__na_debug.contextLost())) === false,
+    'WebGL コンテキストが生きている',
+  );
 
   await browser.close();
 } finally {
