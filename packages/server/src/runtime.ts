@@ -5,10 +5,19 @@ import {
   type IdentityConfig,
   type RoomsConfig,
   type WorldConfig,
+  type PrivacyConfig,
   type X402Config,
 } from '@na/shared';
-import { loadIdentityConfig, loadRoomsConfig, loadWorldConfig, loadX402Config } from '@na/shared/node';
+import {
+  loadIdentityConfig,
+  loadPrivacyConfig,
+  loadRoomsConfig,
+  loadWorldConfig,
+  loadX402Config,
+} from '@na/shared/node';
 import { IdentityService } from './identity/service.js';
+import { createHttpMxeClient, createMockMxe, PrivateGateway } from './privacy/gateway.js';
+import { PaymentRecordStore } from './privacy/records.js';
 import { createX402Service, type X402Service } from './x402/service.js';
 import { FileEventLog, MemoryEventLog, type EventLog } from './store/event-log.js';
 import { CURRENT_MILESTONE, loadDotEnv, resolveEnv, type ResolvedEnv } from './env.js';
@@ -27,6 +36,11 @@ export interface Runtime {
   eventLog: EventLog;
   x402Config: X402Config;
   x402: X402Service;
+  privacyConfig: PrivacyConfig;
+  gateway: PrivateGateway;
+  paymentRecords: PaymentRecordStore;
+  /** 実 MXE に向いているか（未検証）、mock か。 */
+  gatewayMode: 'http' | 'mock';
   /**
    * 認証は未実装（この段階の範囲外）。ローカルの単一 session identity を仮で立てる。
    * 複数プレイヤーの認証・セッション管理は別途。
@@ -59,6 +73,15 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   const x402Config = loadX402Config(process.env).value;
   const x402 = createX402Service(x402Config, process.env);
 
+  const privacyConfig = loadPrivacyConfig(process.env).value;
+  const clusterUrl = env.get('NA_ARCIUM_CLUSTER_URL');
+  const gatewayMode = clusterUrl ? 'http' : 'mock';
+  const gateway = new PrivateGateway(
+    clusterUrl ? createHttpMxeClient(clusterUrl) : createMockMxe(),
+    privacyConfig,
+  );
+  const paymentRecords = new PaymentRecordStore(eventLog, privacyConfig.recording);
+
   return {
     config,
     configPath: path,
@@ -71,6 +94,10 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     eventLog,
     x402Config,
     x402,
+    privacyConfig,
+    gateway,
+    paymentRecords,
+    gatewayMode,
     localPlayerId: localPlayer.id,
   };
 }
@@ -111,6 +138,11 @@ export function printStartupLabels(runtime: Runtime): void {
         .join(', ') + ` / 署名 mode=${runtime.x402.mode}`,
   );
   console.log('[x402] feePayer は 402 の extra から毎回取得（config に持たない）');
+  console.log(
+    `[privacy] gateway mode=${runtime.gatewayMode}（実 MXE 投入は未検証・区分B） / ` +
+      `返るのは ${runtime.privacyConfig.response.allowedFields.join(', ')} のみ`,
+  );
+  console.log(`[privacy] ${runtime.privacyConfig.claims.claim_ja}`);
 }
 
 export function resolveClientDist(cwd = process.cwd()): string {

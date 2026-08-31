@@ -20,6 +20,18 @@ function main(): void {
     roomsConfig: runtime.roomsConfig,
     localPlayerId: runtime.localPlayerId,
     x402Status: () => runtime.x402.status(),
+    privacyStatus: () => ({
+      gateway: { ...runtime.privacyConfig.gateway, mode: runtime.gatewayMode },
+      response: runtime.privacyConfig.response,
+      recording: runtime.privacyConfig.recording,
+      claims: runtime.privacyConfig.claims,
+      records: runtime.paymentRecords.all().length,
+      notes: {
+        verification: '検証は MXE の中で走り、返るのは payment_valid のみ',
+        recording: 'ログ / KV にウォレットアドレス・金額・エンドポイントを残さない',
+        scope: 'ミキサーは実装しない。送金の追跡不能化ではなく検証の機密化',
+      },
+    }),
     port,
     clientDist,
   });

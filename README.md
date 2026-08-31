@@ -52,6 +52,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `GET /api/world/config` | world config と解決済みの固有名・未確定リスト |
 | `GET /api/market/state` | 現在の market state（品目・価格・在庫・進行中のショック） |
 | `POST /api/market/shock` | 供給ショックの手動フック |
+| `GET /api/privacy/status` | Gateway の状態・記録方針・claim の線（秘密は出さない） |
 | `GET /api/x402/status` | x402 の protocol / facilitator / レール状態・署名可否（秘密は出さない） |
 | `GET /api/identity/session` | identity・wallet・standing・room gate の現在値 |
 | `POST /api/identity/rotate` | session wallet の rotate（評判は残る） |
@@ -66,6 +67,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | M2 | 歩けるグレイボックス・クライアント | 済 |
 | M3 | identity & wallet（standing / room gate） | 済（区分A）／実照会は区分B 未消化 |
 | M4 | x402 決済の配線（native withX402 v2） | 済（区分A）／実 facilitator・実着金は区分B 未消化 |
+| M5 | privacy 層（x402 Private Gateway / Arcium MXE） | 済（区分A）／実 MXE 投入・実 RPC は区分B 未消化 |
 | M3 以降 | identity/wallet、x402 決済、Arcium、エージェント自律、commission board | 別指示待ち |
 
 M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
@@ -92,6 +94,7 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 | `config/x402.config.json` の facilitator | `https://facilitator.payai.network`（PayAI）。疎通は未検証 |
 | x402 の実署名 | Solana keypair / EVM EIP-712 の実署名は未実装。鍵が無いレールは `unavailableSigner` で落ちる（別レールに振り替えない） |
 | 実レール着金 | 未検証。区分A は mock facilitator と mock リソースサーバで一周を確認 |
+| Arcium MXE / Gateway | `config/privacy.config.json` の gateway URL は未指定（`TBD`）。実 MXE 投入・実 RPC は未検証。区分A は bool を返す mock MXE で結線を確認 |
 
 ## x402（M4）
 
@@ -109,6 +112,19 @@ leg は `amount`。確定値は `config/x402.config.json` に置き、ソース�
 - per-call の件数を成長指標にしない。精算は M7 の commission の account 締めに紐付く。
 
 区分A の一周（mock facilitator + mock リソースサーバ）で、402 → `X-PAYMENT` 再送 → settle 検証まで通る。
+
+## privacy 層（M5）
+
+検証は MXE（MPC クラスタ）の中で走り、**返るのは `payment_valid` だけ**。
+送金元・金額・エンドポイントは受け取らないし、ログにも KV にも残さない。
+封印タブレット（case tablet）と同じ形（world-spec §1）。
+
+- 許可外のフィールドが返ってきたら**黙って捨てずに落とす**。機密化できていないことに気づけなくなるため。
+- 決済記録に書けるのは `payment_valid` と業務側の参照だけ。アドレスらしき文字列は書き込み時に検査して落とす
+  （EVM `0x…40桁` / Solana base58 / `mock:` 前置き）。
+- **ミキサーは実装しない。追跡不能化を謳わない。** 送金の秘匿ではなく検証の機密化。
+  この線は config の `claims`（`mixer: false` / `untraceability: false`）で固定し、
+  違う値を入れると config 検証が落ちる。
 
 ## 実装するときの決まり
 

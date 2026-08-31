@@ -14,6 +14,7 @@ export interface HttpOptions {
   /** 認証は未実装。ローカルの単一 session identity（仮）。 */
   localPlayerId: string;
   x402Status: () => unknown;
+  privacyStatus: () => unknown;
   port: number;
   /** 指定すると同一オリジンでクライアントの静的ファイルを配信する。 */
   clientDist?: string | undefined;
@@ -91,6 +92,10 @@ export function createHttpServer(options: HttpOptions) {
 
       case 'GET /api/market/state':
         sendJson(res, 200, sim.state(Date.now()));
+        return;
+
+      case 'GET /api/privacy/status':
+        sendJson(res, 200, options.privacyStatus());
         return;
 
       case 'GET /api/x402/status':

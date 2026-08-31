@@ -24,6 +24,7 @@ async function withServer<T>(fn: (base: string, sim: MarketSimulation) => Promis
     roomsConfig,
     localPlayerId,
     x402Status: () => ({ mode: 'unavailable' }),
+    privacyStatus: () => ({ mode: 'mock' }),
     port: 0,
   });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));

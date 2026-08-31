@@ -6,6 +6,7 @@ export * from './market.types.js';
 export * from './identity.types.js';
 export * from './identity.config.types.js';
 export * from './x402.types.js';
+export * from './privacy.types.js';
 export * from './naming.js';
 export * from './rng.js';
 export * from './errors.js';

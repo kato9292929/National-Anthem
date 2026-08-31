@@ -1,0 +1,29 @@
+{
+  "$comment": "M5 privacy 層。x402 Private Gateway / Arcium MXE。返るのは payment_valid のみ。",
+  "version": "0",
+  "gateway": {
+    "$comment": "Gateway の実 URL は未指定。env NA_ARCIUM_CLUSTER_URL で渡す。未設定なら mock でのみ動く。",
+    "url": "TBD",
+    "confirmed": false,
+    "verified": false,
+    "source_repo": "github.com/kato9292929/Arcium"
+  },
+  "response": {
+    "$comment": "MXE から受け取ってよいフィールドはこれだけ。他が混ざっていたら受け取らずに落とす。",
+    "allowedFields": ["payment_valid"],
+    "confirmed": true
+  },
+  "recording": {
+    "$comment": "ログ / KV にウォレットアドレスを残さない。書き込み時に検査して落とす。",
+    "walletAddressesAllowed": false,
+    "amountsAllowed": false,
+    "endpointsAllowed": false
+  },
+  "claims": {
+    "$comment": "書いてよい説明の線。overclaim しない。",
+    "mixer": false,
+    "untraceability": false,
+    "claim_ja": "送金の追跡不能化ではなく、検証の機密化。封印タブレット（case tablet）と同じ形で、条項を見せずに検証だけ返す。",
+    "confirmed": true
+  }
+}
