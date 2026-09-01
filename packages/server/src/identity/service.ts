@@ -212,27 +212,58 @@ export class IdentityService {
     return event;
   }
 
+  /**
+   * 押印の履歴から standing を出す。
+   * 古い押印ほど効きが薄れる（半減期は仮値）。直近の重大事故は別枠で持ち回る。
+   * 数値も方針も未確定なので、内訳を必ず添えて provisional であることを示す。
+   */
   standing(identityId: string): Standing {
     const identity = this.requireIdentity(identityId);
-    const { initial, min, max } = this.options.identityConfig.standing;
+    const { initial, min, max, policy } = this.options.identityConfig.standing;
     const events = this.reputation.filter((e) => e.identityId === identity.id);
-    const raw = events.reduce((sum, e) => sum + e.weight, initial);
+    const now = this.now();
+
+    const rawWeight = events.reduce((sum, e) => sum + e.weight, 0);
+    const decayedWeight = events.reduce((sum, e) => sum + e.weight * decayFactor(now - e.at, policy.halfLifeDays), 0);
+    const recentSevere = events
+      .filter((e) => policy.severeKinds.includes(e.kind) && ageDays(now - e.at) <= policy.recentWindowDays)
+      .map((e) => ({ kind: e.kind, at: e.at, ref: e.ref }));
+
     return {
       identityId: identity.id,
-      score: Math.max(min, Math.min(max, raw)),
+      score: Math.max(min, Math.min(max, round2(initial + decayedWeight))),
       impressions: {
         total: events.length,
         positive: events.filter((e) => e.weight > 0).length,
         negative: events.filter((e) => e.weight < 0).length,
       },
       updatedAt: events.at(-1)?.at ?? identity.createdAt,
+      breakdown: {
+        initial,
+        rawWeight: round2(rawWeight),
+        decayedWeight: round2(decayedWeight),
+        halfLifeDays: policy.halfLifeDays,
+        recentSevere,
+        provisional: true,
+      },
     };
   }
 
-  /** standing が room の開閉に効く。しきい値は仮値なので provisional を必ず返す。 */
+  /**
+   * standing が room の開閉に効く。
+   * 点数だけでなく、押印の数と直近の重大事故も見る（いずれも仮値）。
+   * しきい値が確定していない間は provisional を必ず返す。
+   */
   canEnter(identityId: string, roomId: string): RoomGateResult {
     const room = this.options.roomsConfig.rooms.find((r) => r.id === roomId);
     if (!room) throw new Error(`未知の room: ${roomId}`);
+    const requirements = {
+      minStanding: room.minStanding,
+      minImpressions: room.minImpressions,
+      requireNoRecentSevere: room.requireNoRecentSevere,
+    };
+    const provisional = !room.gate_confirmed || !this.options.identityConfig.standing.policy.confirmed;
+
     const identity = this.identities.get(identityId);
     if (!identity) {
       return {
@@ -240,26 +271,41 @@ export class IdentityService {
         identityId,
         allowed: false,
         standing: 0,
+        impressions: 0,
         required: room.minStanding,
+        requirements,
         reason: 'unknown_identity',
-        provisional: !room.gate_confirmed,
+        provisional,
       };
     }
-    const score = this.standing(identityId).score;
+
+    const standing = this.standing(identityId);
+    const policy = this.options.identityConfig.standing.policy;
+    const blockedBySevere =
+      room.requireNoRecentSevere && policy.severeBlocksGates && standing.breakdown.recentSevere.length > 0;
+
+    // 判定の順番は「資格 → 実績の量 → 点数」。理由を 1 つに畳んで返す。
     const reason: RoomGateResult['reason'] =
       identity.status === 'suspended'
         ? 'suspended'
-        : score >= room.minStanding
-          ? 'ok'
-          : 'standing_too_low';
+        : blockedBySevere
+          ? 'recent_severe_event'
+          : standing.impressions.total < room.minImpressions
+            ? 'insufficient_impressions'
+            : standing.score >= room.minStanding
+              ? 'ok'
+              : 'standing_too_low';
+
     return {
       roomId,
       identityId,
       allowed: reason === 'ok',
-      standing: score,
+      standing: standing.score,
+      impressions: standing.impressions.total,
       required: room.minStanding,
+      requirements,
       reason,
-      provisional: !room.gate_confirmed,
+      provisional,
     };
   }
 
@@ -312,4 +358,18 @@ export class IdentityService {
     for (let i = 0; i < 16; i++) out += Math.floor(this.rng.next() * 16).toString(16);
     return `${MOCK_ADDRESS_PREFIX}${out}`;
   }
+}
+
+/** 経過時間から効きの減り方を出す。半減期は仮値。 */
+function decayFactor(elapsedMs: number, halfLifeDays: number): number {
+  if (elapsedMs <= 0) return 1;
+  return Math.pow(0.5, ageDays(elapsedMs) / halfLifeDays);
+}
+
+function ageDays(elapsedMs: number): number {
+  return elapsedMs / (24 * 60 * 60 * 1000);
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }

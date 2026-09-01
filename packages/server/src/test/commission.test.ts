@@ -281,3 +281,156 @@ test('物販は副モジュール。市場は M1 が正で、commission board �
   assert.ok(!source.includes("from './board.js'"), '物販から commission board を参照しない');
   assert.ok(!source.includes('CommissionBoard'));
 });
+
+test('escrow: 二重 fund をしない。0 や非整数の金額は積まない', () => {
+  const r = rig();
+  const agreed = openAndAgree(r);
+  r.board.fund(agreed.id);
+  assert.throws(() => r.board.fund(agreed.id), /締結前に escrow は積まない|既に held/);
+  assert.throws(() => r.board.escrow.fund('x-0', '0'), /0 の escrow は積まない/);
+  assert.throws(() => r.board.escrow.fund('x-1', '10.5'), /最小単位の整数文字列/);
+});
+
+test('係争の解決で release するには payment_valid が要る', () => {
+  const r = rig();
+  const a = openAndAgree(r);
+  r.board.fund(a.id);
+  r.board.completeLeg(a.id, 0, 'done');
+  r.board.openDispute(a.id, r.principalId, '確認したい');
+  assert.throws(
+    () =>
+      r.board.resolveDispute({
+        disputeId: `dispute-${a.id}`,
+        arbiterId: r.arbiterId,
+        outcome: 'release',
+        resolution: '妥当',
+      }),
+    /payment_valid が無いまま release しない/,
+  );
+  assert.equal(r.board.escrow.get(a.id)?.state, 'held', '失敗しても escrow は開かない');
+});
+
+test('release と refund は競合しない（先に閉じた側が勝ち、もう片方は落ちる）', () => {
+  const settledFirst = rig();
+  const a = openAndAgree(settledFirst);
+  settledFirst.board.fund(a.id);
+  settledFirst.board.completeLeg(a.id, 0, 'done');
+  settledFirst.board.settle(a.id, { paymentValid: true });
+  assert.throws(() => settledFirst.board.refundForNonDelivery(a.id, '後から払い戻し'), /既に閉じている/);
+
+  const refundedFirst = rig();
+  const b = openAndAgree(refundedFirst);
+  refundedFirst.board.fund(b.id);
+  refundedFirst.board.completeLeg(b.id, 0, 'done');
+  refundedFirst.board.refundForNonDelivery(b.id, '先に払い戻し');
+  assert.throws(() => refundedFirst.board.settle(b.id, { paymentValid: true }), /納品前に精算しない/);
+});
+
+test('解決済みの係争のあとに払い戻しを重ねられない', () => {
+  const r = rig();
+  const a = openAndAgree(r);
+  r.board.fund(a.id);
+  r.board.openDispute(a.id, r.principalId, '届かない');
+  r.board.resolveDispute({ disputeId: `dispute-${a.id}`, arbiterId: r.arbiterId, outcome: 'refund', resolution: '不履行' });
+  assert.throws(() => r.board.refundForNonDelivery(a.id, '二重'), /既に閉じている/);
+  assert.equal(r.board.escrow.get(a.id)?.state, 'refunded');
+});
+
+test('arbiter の権限境界: 未知の identity は arbiter になれない', () => {
+  const r = rig();
+  const a = openAndAgree(r);
+  r.board.fund(a.id);
+  r.board.openDispute(a.id, r.agentId, '報酬が出ない');
+  assert.throws(
+    () =>
+      r.board.resolveDispute({ disputeId: `dispute-${a.id}`, arbiterId: 'id-9999', outcome: 'refund', resolution: 'x' }),
+    /未知の identity/,
+  );
+  assert.throws(
+    () =>
+      r.board.resolveDispute({ disputeId: `dispute-${a.id}`, arbiterId: r.agentId, outcome: 'refund', resolution: 'x' }),
+    /当事者は arbiter になれない/,
+  );
+});
+
+test('arbiter を要らない設定なら当事者チェックも走らない（設定は仮値）', () => {
+  const log = new MemoryEventLog();
+  const identity = new IdentityService({ identityConfig, roomsConfig, seed: 5 });
+  const principalId = identity.createIdentity({ kind: 'human' }).id;
+  const agentId = identity.createIdentity({ kind: 'agent', principalId }).id;
+  const board = new CommissionBoard({
+    config: { ...commissionConfig, arbitration: { ...commissionConfig.arbitration, requiresArbiter: false } },
+    world,
+    identity,
+    log,
+  });
+  const commission = board.open({
+    principalId,
+    itemId: world.stall_categories.imports[0]!.id,
+    quantity: 1,
+    amount: '10000',
+    legs: [{ partnerId: world.trade_partners[0]!.id }],
+  });
+  board.proposeAgent(commission.id, agentId);
+  board.agree(commission.id, principalId);
+  board.agree(commission.id, agentId);
+  board.fund(commission.id);
+  board.openDispute(commission.id, principalId, 'x');
+  const resolved = board.resolveDispute({
+    disputeId: `dispute-${commission.id}`,
+    arbiterId: 'not-an-identity',
+    outcome: 'refund',
+    resolution: '設定次第',
+  });
+  assert.equal(resolved.commission.state, 'refunded');
+  assert.equal(commissionConfig.arbitration.confirmed, false, 'arbitration の方針は未確定');
+});
+
+test('当事者でない者は係争を起こせない。未定義の結果は受け付けない', () => {
+  const r = rig();
+  const a = openAndAgree(r);
+  r.board.fund(a.id);
+  assert.throws(() => r.board.openDispute(a.id, r.arbiterId, 'x'), /当事者でない/);
+  r.board.openDispute(a.id, r.principalId, 'x');
+  assert.throws(
+    () =>
+      r.board.resolveDispute({
+        disputeId: `dispute-${a.id}`,
+        arbiterId: r.arbiterId,
+        outcome: 'split' as never,
+        resolution: 'x',
+      }),
+    /未定義の結果/,
+  );
+});
+
+test('レグが失敗したままでは精算しない', () => {
+  const r = rig();
+  const commission = r.board.open({
+    principalId: r.principalId,
+    itemId: r.itemId,
+    quantity: 1,
+    amount: '10000',
+    legs: [{ partnerId: world.trade_partners[0]!.id }, { partnerId: world.trade_partners[1]!.id }],
+  });
+  r.board.proposeAgent(commission.id, r.agentId);
+  r.board.agree(commission.id, r.principalId);
+  r.board.agree(commission.id, r.agentId);
+  r.board.fund(commission.id);
+  r.board.completeLeg(commission.id, 0, 'done');
+  const partial = r.board.completeLeg(commission.id, 1, 'failed');
+  assert.equal(partial.state, 'in_progress');
+  assert.throws(() => r.board.settle(commission.id, { paymentValid: true }), /納品前に精算しない/);
+  assert.throws(() => r.board.completeLeg(commission.id, 1, 'done'), /既に failed のレグ/);
+});
+
+test('委託の入力を推測で埋めない（数量・レグの重複）', () => {
+  const r = rig();
+  const base = { principalId: r.principalId, itemId: r.itemId, amount: '10000' };
+  assert.throws(() => r.board.open({ ...base, quantity: 0, legs: [{ partnerId: r.partnerId }] }), /数量は 1 以上/);
+  assert.throws(() => r.board.open({ ...base, quantity: 1.5, legs: [{ partnerId: r.partnerId }] }), /数量は 1 以上/);
+  assert.throws(
+    () => r.board.open({ ...base, quantity: 1, legs: [{ partnerId: r.partnerId }, { partnerId: r.partnerId }] }),
+    /レグが重複/,
+  );
+});

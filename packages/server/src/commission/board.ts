@@ -83,6 +83,14 @@ export class CommissionBoard {
     if (!/^\d+$/.test(input.amount)) {
       throw new CommissionError(`金額は最小単位の整数文字列で渡す（実際: ${input.amount}）`);
     }
+    if (!Number.isInteger(input.quantity) || input.quantity <= 0) {
+      throw new CommissionError(`数量は 1 以上の整数（実際: ${input.quantity}）`);
+    }
+    const seenLegs = new Set(input.legs.map((leg) => leg.partnerId));
+    if (seenLegs.size !== input.legs.length) {
+      // レグ数と遠隔地の扱いは未確定なので、同じ相手を重ねる意味を勝手に決めない。
+      throw new CommissionError('同じ交易相手のレグが重複している（重ね方は commission_flow 未確定）');
+    }
 
     const at = this.now();
     const commission: Commission = {

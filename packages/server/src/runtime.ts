@@ -7,6 +7,7 @@ import {
   type WorldConfig,
   type AgentConfig,
   type CommissionConfig,
+  type MarketStructureConfig,
   type PrivacyConfig,
   type X402Config,
 } from '@na/shared';
@@ -14,12 +15,14 @@ import {
   loadAgentConfig,
   loadCommissionConfig,
   loadIdentityConfig,
+  loadMarketStructureConfig,
   loadPrivacyConfig,
   loadRoomsConfig,
   loadWorldConfig,
   loadX402Config,
 } from '@na/shared/node';
 import { IdentityService } from './identity/service.js';
+import { createAdapterRegistry, type AdapterRegistry } from './adapters/registry.js';
 import { evaluateGates, type GateResult } from './agent/gate.js';
 import { CommissionBoard } from './commission/board.js';
 import { GoodsStorefront } from './commission/storefront.js';
@@ -38,6 +41,7 @@ export interface Runtime {
   env: ResolvedEnv;
   sim: MarketSimulation;
   seedInput: string;
+  marketStructure: MarketStructureConfig;
   identityConfig: IdentityConfig;
   roomsConfig: RoomsConfig;
   identity: IdentityService;
@@ -51,6 +55,7 @@ export interface Runtime {
   gatewayMode: 'http' | 'mock';
   agentConfig: AgentConfig;
   agentGate: GateResult;
+  adapters: AdapterRegistry;
   commissionConfig: CommissionConfig;
   board: CommissionBoard;
   storefront: GoodsStorefront;
@@ -67,7 +72,8 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   const env = resolveEnv(process.env, CURRENT_MILESTONE);
   const { config, path } = loadWorldConfig(process.env);
   const seedInput = env.require('NA_MARKET_SEED');
-  const sim = new MarketSimulation({ config, seed: seedFrom(seedInput) });
+  const marketStructure = loadMarketStructureConfig(process.env).value;
+  const sim = new MarketSimulation({ config, seed: seedFrom(seedInput), structure: marketStructure });
 
   const identityConfig = loadIdentityConfig(process.env).value;
   const roomsConfig = loadRoomsConfig(process.env).value;
@@ -95,6 +101,13 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   );
   const paymentRecords = new PaymentRecordStore(eventLog, privacyConfig.recording);
 
+  // 区分B の口。env が無ければ mock / 未接続のまま（偽の応答は作らない）。
+  const adapters = createAdapterRegistry({
+    facilitatorUrl: env.get('NA_X402_FACILITATOR_URL'),
+    mxeUrl: clusterUrl,
+    forceMock: env.get('NA_X402_MOCK') === '1',
+  });
+
   const commissionConfig = loadCommissionConfig(process.env).value;
   const board = new CommissionBoard({
     config: commissionConfig,
@@ -114,6 +127,7 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     env,
     sim,
     seedInput,
+    marketStructure,
     identityConfig,
     roomsConfig,
     identity,
@@ -124,6 +138,7 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     gateway,
     paymentRecords,
     gatewayMode,
+    adapters,
     agentConfig,
     agentGate,
     commissionConfig,
@@ -141,6 +156,11 @@ export function printStartupLabels(runtime: Runtime): void {
   console.log(`[world] presentation: 未着手（グレイボックスで描画）`);
   console.log(`[market] seed: ${runtime.seedInput} -> ${runtime.sim.seed}`);
   console.log(`[market] 仮値: ${TUNING_PROVISIONAL_NOTE}`);
+  console.log(
+    `[market] 連関 ${runtime.marketStructure.links.edges.length} 本（仮）/ ` +
+      `ショック伝播 ${runtime.marketStructure.shockPropagation.enabled ? '有効' : '無効'}（最大 ${runtime.marketStructure.shockPropagation.maxHops} ホップ）/ ` +
+      `1 カテゴリ ${runtime.marketStructure.stalls.perCategory} 軒`,
+  );
   console.log(
     `[env] 後続で必要になるキー: ${runtime.env.pending
       .map((p) => `${p.key}(${p.requiredFrom}${p.provisional ? ',キー名仮' : ''}:${p.set ? '設定済' : '未設定'})`)
@@ -174,6 +194,12 @@ export function printStartupLabels(runtime: Runtime): void {
       `返るのは ${runtime.privacyConfig.response.allowedFields.join(', ')} のみ`,
   );
   console.log(`[privacy] ${runtime.privacyConfig.claims.claim_ja}`);
+  console.log(
+    `[adapters] ${runtime.adapters
+      .statuses()
+      .map((a) => `${a.id}(${a.mode}${a.verified ? '' : '/未検証'})`)
+      .join(', ')}`,
+  );
   console.log(
     `[agent] models: quoting=${runtime.agentConfig.models.quoting} / judgement=${runtime.agentConfig.models.judgement} ` +
       `/ escalation=${runtime.agentConfig.models.escalation}（opus 全採用にしない）`,

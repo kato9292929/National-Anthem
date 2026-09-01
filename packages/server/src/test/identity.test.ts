@@ -82,7 +82,9 @@ test('standing が room の開閉に効く。しきい値が仮値なら provisi
 
   const inner = s.canEnter(id, 'inner_room');
   assert.equal(inner.allowed, false);
-  assert.equal(inner.reason, 'standing_too_low');
+  // 押印がまだ無いので、点数の前に実績の量で閉じる。
+  assert.equal(inner.reason, 'insufficient_impressions');
+  assert.equal(inner.requirements.minImpressions, 3);
 
   for (let i = 0; i < 5; i++) s.recordReputation({ identityId: id, kind: 'commission_completed' });
   assert.equal(s.canEnter(id, 'inner_room').allowed, true);
@@ -126,5 +128,77 @@ test('壊れたイベントログは黙って読み飛ばさない', () => {
     assert.throws(() => new FileEventLog(path), /壊れている/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('古い押印ほど効きが薄れる（半減期は仮値）', () => {
+  const day = 24 * 60 * 60 * 1000;
+  let now = 0;
+  const s = new IdentityService({
+    identityConfig,
+    roomsConfig,
+    log: new MemoryEventLog(),
+    seed: 7,
+    now: () => now,
+  });
+  const id = s.createIdentity({ kind: 'human' }).id;
+  s.recordReputation({ identityId: id, kind: 'commission_completed' });
+  const fresh = s.standing(id);
+  assert.equal(fresh.breakdown.decayedWeight, fresh.breakdown.rawWeight, '直後は減衰しない');
+
+  now = identityConfig.standing.policy.halfLifeDays * day;
+  const aged = s.standing(id);
+  assert.ok(aged.score < fresh.score, '時間が経っても効きが変わっていない');
+  assert.ok(
+    Math.abs(aged.breakdown.decayedWeight - aged.breakdown.rawWeight / 2) < 0.01,
+    `半減期で半分にならない: ${aged.breakdown.decayedWeight}`,
+  );
+  assert.equal(aged.breakdown.provisional, true);
+});
+
+test('直近の重大事故は点数に関わらず門を閉じる', () => {
+  const day = 24 * 60 * 60 * 1000;
+  let now = 0;
+  const s = new IdentityService({
+    identityConfig,
+    roomsConfig,
+    log: new MemoryEventLog(),
+    seed: 7,
+    now: () => now,
+  });
+  const id = s.createIdentity({ kind: 'human' }).id;
+  for (let i = 0; i < 12; i++) s.recordReputation({ identityId: id, kind: 'commission_completed' });
+  assert.equal(s.canEnter(id, 'inner_room').allowed, true);
+
+  s.recordReputation({ identityId: id, kind: 'counterparty_vanished', ref: 'c-9' });
+  const blocked = s.canEnter(id, 'inner_room');
+  assert.equal(blocked.allowed, false);
+  assert.equal(blocked.reason, 'recent_severe_event');
+  assert.equal(s.standing(id).breakdown.recentSevere.length, 1);
+
+  // 直近窓を抜ければ、点数が足りている限り再び開く。
+  now = (identityConfig.standing.policy.recentWindowDays + 1) * day;
+  const later = s.canEnter(id, 'inner_room');
+  assert.equal(later.reason === 'recent_severe_event', false, '窓を抜けても塞がれている');
+});
+
+test('点数が足りていても押印が少なければ上の間には入れない', () => {
+  const s = service();
+  const id = s.createIdentity({ kind: 'human' }).id;
+  // 重い加点 1 件だけで点数を作る。
+  for (let i = 0; i < 3; i++) s.recordReputation({ identityId: id, kind: 'commission_completed' });
+  const sealed = s.canEnter(id, 'sealed_room');
+  assert.equal(sealed.allowed, false);
+  assert.equal(sealed.reason, 'insufficient_impressions');
+  assert.equal(sealed.impressions, 3);
+  assert.ok(sealed.requirements.minImpressions > 3);
+});
+
+test('gate の判定条件は仮値として返る（policy が未確定な間は provisional）', () => {
+  assert.equal(identityConfig.standing.policy.confirmed, false);
+  const s = service();
+  const id = s.createIdentity({ kind: 'human' }).id;
+  for (const room of roomsConfig.rooms) {
+    assert.equal(s.canEnter(id, room.id).provisional, true, `${room.id} が確定扱いになっている`);
   }
 });

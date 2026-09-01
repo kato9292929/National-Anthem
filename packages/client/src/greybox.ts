@@ -54,6 +54,20 @@ export const GREYBOX = {
     colorClosed: 0x7a6f5c,
     colorOpenMarker: 0x5c6f7a,
   },
+  /** 照明。グレイボックス段階の無地の当て方。 */
+  light: { sky: 0xffffff, ground: 0x404040, ambientIntensity: 1.15, keyColor: 0xffffff, keyIntensity: 0.55 },
+  /** 看板に描く文字と枠の色。canvas に直接書くのでここに集める。 */
+  label: {
+    background: 'rgba(20,21,23,0.86)',
+    border: '#6a6d72',
+    borderShock: '#d9c48a',
+    borderOpen: '#9fd39f',
+    borderClosed: '#a38f5c',
+    title: '#e6e7e9',
+    body: '#b9bcc0',
+    open: '#9fd39f',
+    closed: '#d9c48a',
+  },
   camera: { fov: 70, near: 0.1, far: 220 },
   fog: { near: 18, far: 120 },
 } as const;

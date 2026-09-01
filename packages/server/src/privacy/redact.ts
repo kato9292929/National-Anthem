@@ -3,7 +3,10 @@
  * 見つけたら黙って伏せ字にするのではなく、書き込み側を落とす（隠さない）。
  */
 
-/** EVM: 0x + 40 hex。Solana: base58 32〜44 文字。mock: 前置きの仮アドレスも同じ扱い。 */
+/**
+ * EVM: 0x + 40 hex。Solana: base58 32〜44 文字。mock: 前置きの仮アドレスも同じ扱い。
+ * 取りこぼすより余分に捕まえる側に倒す（長い英数字の参照値は弾かれる）。
+ */
 const PATTERNS: { name: string; re: RegExp }[] = [
   { name: 'evm', re: /\b0x[a-fA-F0-9]{40}\b/ },
   { name: 'solana', re: /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/ },
@@ -24,7 +27,11 @@ export function findAddresses(value: unknown, path = '$'): AddressHit[] {
     return value.flatMap((v, i) => findAddresses(v, `${path}[${i}]`));
   }
   if (typeof value === 'object' && value !== null) {
-    return Object.entries(value).flatMap(([key, v]) => findAddresses(v, `${path}.${key}`));
+    return Object.entries(value).flatMap(([key, v]) => [
+      // キー側にアドレスを入れる KV も防ぐ（値だけ見ていると素通りする）。
+      ...PATTERNS.filter((p) => p.re.test(key)).map((p) => ({ kind: p.name, path: `${path}.<key>${key}` })),
+      ...findAddresses(v, `${path}.${key}`),
+    ]);
   }
   return [];
 }

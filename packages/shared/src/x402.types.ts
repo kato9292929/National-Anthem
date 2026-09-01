@@ -27,6 +27,8 @@ export interface RailConfig {
   confirmed: boolean;
   verified: boolean;
   eip712Domain: Eip712Domain | null;
+  /** このレールは 402 の extra.feePayer が必須か。欠けていたら払わずに落とす。 */
+  requiresFeePayer: boolean;
 }
 
 export interface X402Config {
@@ -38,6 +40,9 @@ export interface X402Config {
     paymentHeader: string;
     paymentResponseHeader: string;
     legAmountField: string;
+    /** 有効期限がどのフィールドで来るかは未確定。仮のキー名。 */
+    legExpiryField: string;
+    legExpiryConfirmed: boolean;
     confirmed: boolean;
   };
   facilitator: { url: string; provider: string; confirmed: boolean; verified: boolean };
@@ -57,6 +62,8 @@ export interface PaymentLeg {
   resource?: string;
   description?: string;
   maxTimeoutSeconds?: number;
+  /** 期限（epoch ms）。キー名は config の legExpiryField（仮）。 */
+  expiresAt?: number;
   /** feePayer はここから取る。毎回読み直す。 */
   extra?: Record<string, unknown> & { feePayer?: string };
 }
@@ -108,6 +115,7 @@ export function validateX402Config(input: unknown, source: string): X402Config {
       defaultAmount: str(o['defaultAmount'], source, `rails[${i}].defaultAmount`),
       confirmed: bool(o['confirmed'], source, `rails[${i}].confirmed`),
       verified: bool(o['verified'], source, `rails[${i}].verified`),
+      requiresFeePayer: bool(o['requiresFeePayer'], source, `rails[${i}].requiresFeePayer`),
       eip712Domain:
         domain === null
           ? null
@@ -140,6 +148,8 @@ export function validateX402Config(input: unknown, source: string): X402Config {
       paymentHeader: str(protocol['paymentHeader'], source, 'protocol.paymentHeader'),
       paymentResponseHeader: str(protocol['paymentResponseHeader'], source, 'protocol.paymentResponseHeader'),
       legAmountField: str(protocol['legAmountField'], source, 'protocol.legAmountField'),
+      legExpiryField: str(protocol['legExpiryField'], source, 'protocol.legExpiryField'),
+      legExpiryConfirmed: bool(protocol['legExpiryConfirmed'], source, 'protocol.legExpiryConfirmed'),
       confirmed: bool(protocol['confirmed'], source, 'protocol.confirmed'),
     },
     facilitator: {

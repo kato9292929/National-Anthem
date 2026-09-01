@@ -4,15 +4,49 @@
   "external_assets": {
     "$comment": "確定値。ソースにリテラルを書かず、ここから引く。",
     "erc8004": [
-      { "id": "base", "chain": "base", "agentId": "55560", "issuer": "circle-dcw", "confirmed": true, "verified": false },
-      { "id": "arc-testnet", "chain": "arc-testnet", "agentId": "845265", "issuer": "circle-dcw", "confirmed": true, "verified": false }
+      {
+        "id": "base",
+        "chain": "base",
+        "agentId": "55560",
+        "issuer": "circle-dcw",
+        "confirmed": true,
+        "verified": false
+      },
+      {
+        "id": "arc-testnet",
+        "chain": "arc-testnet",
+        "agentId": "845265",
+        "issuer": "circle-dcw",
+        "confirmed": true,
+        "verified": false
+      }
     ],
     "signers": [
-      { "id": "aa-solana", "kind": "solana-keypair", "address": "6JKVugbVRXR92sacDzgxBU6k6Mb9AAhxLbEy3DyWvEzA", "confirmed": true, "verified": false }
+      {
+        "id": "aa-solana",
+        "kind": "solana-keypair",
+        "address": "6JKVugbVRXR92sacDzgxBU6k6Mb9AAhxLbEy3DyWvEzA",
+        "confirmed": true,
+        "verified": false
+      }
     ],
     "custodial_wallets": [
-      { "id": "dcw-evm-base", "provider": "circle-dcw", "chain": "base", "address": "0xAE7C34B72D0f49605ee2448C5f0D0eCFB4fcfeC8", "confirmed": true, "verified": false },
-      { "id": "dcw-solana", "provider": "circle-dcw", "chain": "solana", "address": "7PVToVBASYgo7c7BfqdditPgud1xnDrSpCgCBaQyL6tY", "confirmed": true, "verified": false }
+      {
+        "id": "dcw-evm-base",
+        "provider": "circle-dcw",
+        "chain": "base",
+        "address": "0xAE7C34B72D0f49605ee2448C5f0D0eCFB4fcfeC8",
+        "confirmed": true,
+        "verified": false
+      },
+      {
+        "id": "dcw-solana",
+        "provider": "circle-dcw",
+        "chain": "solana",
+        "address": "7PVToVBASYgo7c7BfqdditPgud1xnDrSpCgCBaQyL6tY",
+        "confirmed": true,
+        "verified": false
+      }
     ]
   },
   "standing": {
@@ -28,6 +62,16 @@
       "payment_late": -6,
       "counterparty_vanished": -25,
       "dispute_lost": -10
+    },
+    "policy": {
+      "$comment": "【仮値】押印の効き方。時間減衰・直近の重大事故・最低押印数。数値も方針も未確定。",
+      "confirmed": false,
+      "halfLifeDays": 30,
+      "recentWindowDays": 7,
+      "severeKinds": [
+        "counterparty_vanished"
+      ],
+      "severeBlocksGates": true
     }
   },
   "session_wallet": {

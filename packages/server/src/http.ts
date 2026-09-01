@@ -16,6 +16,7 @@ export interface HttpOptions {
   x402Status: () => unknown;
   privacyStatus: () => unknown;
   agentStatus: () => unknown;
+  adapterStatus: () => unknown;
   commissionBoard: () => unknown;
   commissionAction: (body: Record<string, unknown>) => Promise<unknown>;
   storefrontListing: () => unknown;
@@ -121,6 +122,10 @@ export function createHttpServer(options: HttpOptions) {
 
       case 'GET /api/agent/status':
         sendJson(res, 200, options.agentStatus());
+        return;
+
+      case 'GET /api/adapters/status':
+        sendJson(res, 200, options.adapterStatus());
         return;
 
       case 'GET /api/privacy/status':

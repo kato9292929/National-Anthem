@@ -60,6 +60,20 @@ export interface Standing {
   /** 押印の回数（good / bad）。 */
   impressions: { total: number; positive: number; negative: number };
   updatedAt: number;
+  /** 内訳。数値も方針も仮値なので、どう出た点数かを必ず示す。 */
+  breakdown: StandingBreakdown;
+}
+
+export interface StandingBreakdown {
+  initial: number;
+  /** 時間減衰を掛ける前の重み合計。 */
+  rawWeight: number;
+  /** 時間減衰を掛けた後の重み合計。 */
+  decayedWeight: number;
+  halfLifeDays: number;
+  /** 直近窓に入っている重大な事故。 */
+  recentSevere: { kind: ReputationEventKind; at: number; ref: string | null }[];
+  provisional: true;
 }
 
 export interface RoomGateResult {
@@ -68,7 +82,16 @@ export interface RoomGateResult {
   allowed: boolean;
   standing: number;
   required: number;
-  reason: 'ok' | 'standing_too_low' | 'unknown_identity' | 'suspended';
+  reason:
+    | 'ok'
+    | 'standing_too_low'
+    | 'unknown_identity'
+    | 'suspended'
+    | 'insufficient_impressions'
+    | 'recent_severe_event';
+  /** 判定に使った条件（すべて仮値）。 */
+  requirements: { minStanding: number; minImpressions: number; requireNoRecentSevere: boolean };
+  impressions: number;
   /** しきい値が仮値であることを呼び出し側にも伝える。 */
   provisional: boolean;
 }

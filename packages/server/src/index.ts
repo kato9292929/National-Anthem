@@ -69,6 +69,14 @@ function main(): void {
         llm: '市場の動きは M1 の決定論。LLM は推論が要る判断だけに使う',
       },
     }),
+    adapterStatus: () => ({
+      adapters: runtime.adapters.statuses(),
+      notes: {
+        scope: '実キー・実ネットワークが要る接続は区分B（加藤さん環境で消化）',
+        mock: 'mock は値に mock: を残し、onChain は false。もっともらしい偽応答を作らない',
+        unconfigured: '未接続の口は呼ばれたら落ちる。何が要るかをメッセージに載せる',
+      },
+    }),
     privacyStatus: () => ({
       gateway: { ...runtime.privacyConfig.gateway, mode: runtime.gatewayMode },
       response: runtime.privacyConfig.response,

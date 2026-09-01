@@ -3,6 +3,7 @@
  */
 export * from './world-config.types.js';
 export * from './market.types.js';
+export * from './market.config.types.js';
 export * from './identity.types.js';
 export * from './identity.config.types.js';
 export * from './x402.types.js';

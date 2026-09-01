@@ -30,12 +30,25 @@ export interface ExternalCustodialWallet {
   verified: boolean;
 }
 
+export interface StandingPolicy {
+  /** すべて仮値。効き方の方針そのものが未確定。 */
+  confirmed: boolean;
+  /** 押印の効きが半分になるまでの日数（古い実績ほど効かない）。 */
+  halfLifeDays: number;
+  /** 「直近」と見なす窓（日）。 */
+  recentWindowDays: number;
+  /** 直近窓にあると門を閉じる重大な事故。 */
+  severeKinds: ReputationEventKind[];
+  severeBlocksGates: boolean;
+}
+
 export interface StandingConfig {
   confirmed: boolean;
   initial: number;
   min: number;
   max: number;
   weights: Record<ReputationEventKind, number>;
+  policy: StandingPolicy;
 }
 
 export interface IdentityConfig {
@@ -56,6 +69,10 @@ export interface RoomConfig {
   name_placeholder: string;
   name_confirmed: boolean;
   minStanding: number;
+  /** 点数だけでなく、押印の数も見る（仮値）。 */
+  minImpressions: number;
+  /** 直近の重大事故があれば点数に関わらず閉じる（仮値）。 */
+  requireNoRecentSevere: boolean;
   gate_confirmed: boolean;
 }
 
@@ -129,6 +146,25 @@ export function validateIdentityConfig(input: unknown, source: string): Identity
       min: num(standing['min'], source, 'standing.min'),
       max: num(standing['max'], source, 'standing.max'),
       weights: weightMap,
+      policy: (() => {
+        const policy = obj(standing['policy'], source, 'standing.policy');
+        const severeKinds = arr(policy['severeKinds'], source, 'standing.policy.severeKinds').map((v, i) => {
+          const kind = str(v, source, `standing.policy.severeKinds[${i}]`);
+          if (!EVENT_KINDS.includes(kind as ReputationEventKind)) {
+            throw new Error(`${source}: standing.policy.severeKinds[${i}] が未知の種別: ${kind}`);
+          }
+          return kind as ReputationEventKind;
+        });
+        const halfLifeDays = num(policy['halfLifeDays'], source, 'standing.policy.halfLifeDays');
+        if (halfLifeDays <= 0) throw new Error(`${source}: standing.policy.halfLifeDays は 0 より大きいこと`);
+        return {
+          confirmed: bool(policy['confirmed'], source, 'standing.policy.confirmed'),
+          halfLifeDays,
+          recentWindowDays: num(policy['recentWindowDays'], source, 'standing.policy.recentWindowDays'),
+          severeKinds,
+          severeBlocksGates: bool(policy['severeBlocksGates'], source, 'standing.policy.severeBlocksGates'),
+        };
+      })(),
     },
     session_wallet: {
       confirmed: bool(wallet['confirmed'], source, 'session_wallet.confirmed'),
@@ -152,6 +188,8 @@ export function validateRoomsConfig(input: unknown, source: string): RoomsConfig
       name_placeholder: str(o['name_placeholder'], source, `rooms[${i}].name_placeholder`),
       name_confirmed: bool(o['name_confirmed'], source, `rooms[${i}].name_confirmed`),
       minStanding: num(o['minStanding'], source, `rooms[${i}].minStanding`),
+      minImpressions: num(o['minImpressions'], source, `rooms[${i}].minImpressions`),
+      requireNoRecentSevere: bool(o['requireNoRecentSevere'], source, `rooms[${i}].requireNoRecentSevere`),
       gate_confirmed: bool(o['gate_confirmed'], source, `rooms[${i}].gate_confirmed`),
     };
   });

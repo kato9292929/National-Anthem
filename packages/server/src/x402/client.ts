@@ -61,8 +61,15 @@ export async function withX402(
   options.onEvent?.({ kind: 'payment_required', detail: { accepts: requirements.accepts.length } });
 
   const { leg, rail, signer } = selectLeg(requirements, config, options.signers);
+  assertNotExpired(leg, config);
   // feePayer はローテートする。毎回この 402 の値を読む。
   const feePayer = readFeePayer(leg);
+  if (rail.requiresFeePayer && feePayer === null) {
+    throw new X402Error(`rail ${rail.id} は extra.feePayer が要るのに 402 に入っていない`, {
+      railId: rail.id,
+      source: config.feePayer.source,
+    });
+  }
   options.onEvent?.({ kind: 'leg_selected', detail: { railId: rail.id, network: leg.network, feePayer } });
 
   const signed = await signer.sign({ leg, rail, feePayer, resourceUrl: url });
@@ -149,10 +156,31 @@ function normalizeLeg(input: unknown, index: number, config: X402Config): Paymen
     payTo: leg['payTo'] as string,
     ...(typeof leg['resource'] === 'string' ? { resource: leg['resource'] } : {}),
     ...(typeof leg['description'] === 'string' ? { description: leg['description'] } : {}),
+    ...(typeof leg[config.protocol.legExpiryField] === 'number'
+      ? { expiresAt: leg[config.protocol.legExpiryField] as number }
+      : {}),
+    ...(typeof leg['maxTimeoutSeconds'] === 'number' ? { maxTimeoutSeconds: leg['maxTimeoutSeconds'] } : {}),
     ...(typeof leg['extra'] === 'object' && leg['extra'] !== null
       ? { extra: leg['extra'] as Record<string, unknown> }
       : {}),
   };
+}
+
+/**
+ * 期限切れの 402 では署名しない。
+ * 期限がどのフィールドで来るかは未確定（config の legExpiryField が仮）なので、
+ * 期限が無い 402 は「期限なし」として扱い、勝手な既定値を置かない。
+ */
+export function assertNotExpired(leg: PaymentLeg, config: X402Config, now: number = Date.now()): void {
+  if (leg.expiresAt === undefined) return;
+  if (leg.expiresAt <= now) {
+    throw new X402Error('402 の期限が切れている。期限切れのまま署名しない', {
+      expiresAt: leg.expiresAt,
+      now,
+      field: config.protocol.legExpiryField,
+      fieldConfirmed: config.protocol.legExpiryConfirmed,
+    });
+  }
 }
 
 /** feePayer は 402 の extra からのみ。無ければ null を返し、既定値で埋めない。 */

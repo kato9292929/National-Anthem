@@ -26,6 +26,7 @@ async function withServer<T>(fn: (base: string, sim: MarketSimulation) => Promis
     x402Status: () => ({ mode: 'unavailable' }),
     privacyStatus: () => ({ mode: 'mock' }),
     agentStatus: () => ({ gate: { satisfied: false } }),
+    adapterStatus: () => ({ adapters: [] }),
     commissionBoard: () => ({ modules: { primary: 'commission-board' } }),
     commissionAction: () => Promise.resolve({ ok: true }),
     storefrontListing: () => ({ rank: 'secondary' }),

@@ -30,6 +30,10 @@ export interface MockResourceOptions {
   config: X402Config;
   railId: string;
   amount?: string;
+  /** 402 に載せる期限（ms 後）。省略すると期限を載せない。 */
+  expiresInMs?: number;
+  /** feePayer を載せない 402 を返す（異常系の確認用）。 */
+  omitFeePayer?: boolean;
   /** 402 のたびに呼ぶ。ローテートする feePayer を返す。 */
   nextFeePayer: () => string;
   verifier: PaymentVerifier;
@@ -45,7 +49,7 @@ export async function startMockResourceServer(options: MockResourceOptions): Pro
   const server = createServer((req, res) => {
     void (async () => {
       const paymentHeader = req.headers[options.config.protocol.paymentHeader.toLowerCase()];
-      const feePayer = paymentHeader === undefined ? options.nextFeePayer() : null;
+      const feePayer = paymentHeader === undefined && !options.omitFeePayer ? options.nextFeePayer() : null;
 
       const leg: PaymentLeg = {
         scheme: options.config.protocol.scheme,
@@ -55,8 +59,11 @@ export async function startMockResourceServer(options: MockResourceOptions): Pro
         payTo: rail.payTo,
         resource: req.url ?? '/',
         description: 'mock paywalled resource',
+        ...(options.expiresInMs === undefined
+          ? {}
+          : { [options.config.protocol.legExpiryField]: Date.now() + options.expiresInMs }),
         ...(feePayer ? { extra: { feePayer } } : {}),
-      };
+      } as PaymentLeg;
 
       if (typeof paymentHeader !== 'string') {
         challenges.push({ feePayer: feePayer! });
@@ -82,6 +89,11 @@ export async function startMockResourceServer(options: MockResourceOptions): Pro
         return;
       }
       const settlement = await options.settle({ payload, leg });
+      if (settlement['success'] === false) {
+        // settle が通らなければ 200 を返さない（成功に見せない）。
+        send(res, 402, { error: 'settle_failed', detail: settlement });
+        return;
+      }
       res.writeHead(200, {
         'content-type': 'application/json',
         [options.config.protocol.paymentResponseHeader]: encodeHeader(settlement),

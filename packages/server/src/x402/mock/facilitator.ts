@@ -33,6 +33,8 @@ export async function startMockFacilitator(options: MockFacilitatorOptions = {})
   const calls: FacilitatorCall[] = [];
   let feePayerIndex = -1;
   let settleCount = 0;
+  // 同じ支払いを 2 回 settle させない（二重支払いの検出）。
+  const settledSignatures = new Set<string>();
 
   const server = createServer((req, res) => {
     void (async () => {
@@ -50,8 +52,14 @@ export async function startMockFacilitator(options: MockFacilitatorOptions = {})
       }
       if (req.url === '/settle') {
         calls.push({ kind: 'settle', body });
-        settleCount += 1;
         const inner = (payload['payload'] ?? {}) as Record<string, unknown>;
+        const signature = String(inner['signature'] ?? '');
+        if (signature !== '' && settledSignatures.has(signature)) {
+          send(res, 200, { success: false, errorReason: 'payment_replayed' });
+          return;
+        }
+        if (signature !== '') settledSignatures.add(signature);
+        settleCount += 1;
         send(res, 200, {
           success: true,
           transaction: `mock-tx-${settleCount}`,

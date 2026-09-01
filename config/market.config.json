@@ -1,0 +1,29 @@
+{
+  "$comment": "市場シムの構造パラメータ。数値も連関もすべて【仮値】。v0 の経済仕様が確定したら差し替える。",
+  "version": "0",
+  "links": {
+    "$comment": "カテゴリ間の連関。輸入した資源を使って輸出品を作る、という向き。史実の断定ではなく仮の関係。",
+    "confirmed": false,
+    "edges": [
+      { "from": "metal", "to": "craft", "kind": "input", "weight": 0.45 },
+      { "from": "timber", "to": "craft", "kind": "input", "weight": 0.3 },
+      { "from": "stone_gem", "to": "craft", "kind": "input", "weight": 0.25 },
+      { "from": "foodstuff", "to": "textile", "kind": "substitute", "weight": 0.15 }
+    ]
+  },
+  "shockPropagation": {
+    "$comment": "ショックが連関をたどって伝わる強さ。1 ホップごとに減衰する。",
+    "confirmed": false,
+    "enabled": true,
+    "maxHops": 2,
+    "decayPerHop": 0.5,
+    "minEffect": 0.02
+  },
+  "stalls": {
+    "$comment": "1 カテゴリを何軒の stall が分け持つか。在庫の分布と店ごとの値付けのばらつき。",
+    "confirmed": false,
+    "perCategory": 3,
+    "priceSpread": 0.06,
+    "stockSpread": 0.35
+  }
+}

@@ -56,8 +56,8 @@ export function buildScene(layout: MarketLayout, gateSpecs: GateSpec[] = []): Bu
   scene.background = new THREE.Color(GREYBOX.color.sky);
   scene.fog = new THREE.Fog(GREYBOX.color.fog, GREYBOX.fog.near, GREYBOX.fog.far);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x404040, 1.15));
-  const key = new THREE.DirectionalLight(0xffffff, 0.55);
+  scene.add(new THREE.HemisphereLight(GREYBOX.light.sky, GREYBOX.light.ground, GREYBOX.light.ambientIntensity));
+  const key = new THREE.DirectionalLight(GREYBOX.light.keyColor, GREYBOX.light.keyIntensity);
   key.position.set(6, 14, 8);
   scene.add(key);
 
@@ -207,20 +207,20 @@ export function drawGateLabel(gate: GateObject, standing: number): void {
   if (!ctx) throw new Error('2d コンテキストを取得できない');
   const { width, height } = gate.labelCanvas;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = 'rgba(20,21,23,0.86)';
+  ctx.fillStyle = GREYBOX.label.background;
   ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = gate.open ? '#9fd39f' : '#a38f5c';
+  ctx.strokeStyle = gate.open ? GREYBOX.label.borderOpen : GREYBOX.label.borderClosed;
   ctx.lineWidth = 6;
   ctx.strokeRect(3, 3, width - 6, height - 6);
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#e6e7e9';
+  ctx.fillStyle = GREYBOX.label.title;
   fitFont(ctx, gate.label_ja, width - 48, 58, 'system-ui, sans-serif', 600);
   ctx.fillText(gate.label_ja, width / 2, 88);
   ctx.font = '44px ui-monospace, monospace';
-  ctx.fillStyle = gate.open ? '#9fd39f' : '#d9c48a';
+  ctx.fillStyle = gate.open ? GREYBOX.label.open : GREYBOX.label.closed;
   ctx.fillText(gate.open ? '開' : '閉', width / 2, 150);
   ctx.font = '36px ui-monospace, monospace';
-  ctx.fillStyle = '#b9bcc0';
+  ctx.fillStyle = GREYBOX.label.body;
   ctx.fillText(`standing ${standing} / ${gate.required}`, width / 2, 206);
   gate.labelTexture.needsUpdate = true;
 }
@@ -285,19 +285,19 @@ export function drawStallLabel(
   if (!ctx) throw new Error('2d コンテキストを取得できない');
   const { width, height } = stall.labelCanvas;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = 'rgba(20,21,23,0.86)';
+  ctx.fillStyle = GREYBOX.label.background;
   ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = lines.shock ? '#d9c48a' : '#6a6d72';
+  ctx.strokeStyle = lines.shock ? GREYBOX.label.borderShock : GREYBOX.label.border;
   ctx.lineWidth = 6;
   ctx.strokeRect(3, 3, width - 6, height - 6);
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#e6e7e9';
+  ctx.fillStyle = GREYBOX.label.title;
   // 長いカテゴリ名でも切れないよう、幅に収まるまで縮める（config 由来なので長さは可変）。
   fitFont(ctx, lines.title, width - 48, 62, 'system-ui, sans-serif', 600);
   ctx.fillText(lines.title, width / 2, 92);
   ctx.font = '48px ui-monospace, monospace';
-  ctx.fillStyle = '#b9bcc0';
+  ctx.fillStyle = GREYBOX.label.body;
   ctx.fillText(lines.price, width / 2, 160);
   ctx.fillText(lines.stock, width / 2, 214);
   stall.labelTexture.needsUpdate = true;

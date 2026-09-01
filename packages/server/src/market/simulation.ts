@@ -4,8 +4,11 @@ import {
   type ActiveShock,
   type MarketItem,
   type MarketItemState,
+  type MarketStallState,
   type MarketState,
+  type MarketStructureConfig,
   type MarketTrace,
+  type PropagatedEffect,
   type WorldConfig,
 } from '@na/shared';
 import { buildItems, round2 } from './items.js';
@@ -40,6 +43,8 @@ export interface SimulationOptions {
   config: WorldConfig;
   seed: number;
   tuning?: MarketTuning;
+  /** カテゴリ間の連関と stall 分布。未指定なら連関なし・1 カテゴリ 1 stall。 */
+  structure?: MarketStructureConfig;
 }
 
 export class MarketSimulation {
@@ -50,6 +55,9 @@ export class MarketSimulation {
   private shocks: ActiveShock[] = [];
   private currentTick = 0;
   private manualShockCounter = 0;
+  private readonly structure: MarketStructureConfig | null;
+  /** stall ごとの分布係数。tick ごとに計算し直さない（決定論を保つ）。 */
+  private readonly stallShares = new Map<string, { id: string; stockShare: number; priceFactor: number }[]>();
 
   constructor(options: SimulationOptions) {
     this.seed = options.seed >>> 0;
@@ -58,6 +66,7 @@ export class MarketSimulation {
     if (items.length === 0) {
       throw new Error('stall_categories から品目を作れなかった。config を確認する');
     }
+    this.structure = options.structure ?? null;
     this.rng = createRng((this.seed ^ hashString('market-tick')) >>> 0);
     this.runtimes = items.map((item) => {
       const rng = createRng((this.seed ^ hashString(`runtime:${item.id}`)) >>> 0);
@@ -74,6 +83,79 @@ export class MarketSimulation {
         demandJitter: t.demandJitter,
       };
     });
+    this.buildStallShares(items);
+  }
+
+  /** 1 カテゴリを何軒で分け持つか。配分はシードから決まる（毎 tick 振り直さない）。 */
+  private buildStallShares(items: MarketItem[]): void {
+    const perCategory = this.structure?.stalls.perCategory ?? 1;
+    const stockSpread = this.structure?.stalls.stockSpread ?? 0;
+    const priceSpread = this.structure?.stalls.priceSpread ?? 0;
+
+    for (const item of items) {
+      const rng = createRng((this.seed ^ hashString(`stalls:${item.id}`)) >>> 0);
+      const raw: number[] = [];
+      for (let i = 0; i < perCategory; i++) raw.push(1 + (rng.next() * 2 - 1) * stockSpread);
+      const total = raw.reduce((sum, v) => sum + v, 0);
+      this.stallShares.set(
+        item.id,
+        raw.map((value, index) => ({
+          id: `${item.id}-${index + 1}`,
+          stockShare: value / total,
+          priceFactor: 1 + (rng.next() * 2 - 1) * priceSpread,
+        })),
+      );
+    }
+  }
+
+  /**
+   * 連関をたどってショックを伝える。
+   * 直撃した品目の不足が、その品目を投入に使う品目の供給を削る。
+   * 連関そのものが仮の設定なので、影響には出所（fromItemId / hops）を必ず残す。
+   */
+  private propagation(): Map<string, PropagatedEffect[]> {
+    const out = new Map<string, PropagatedEffect[]>();
+    const propagationConfig = this.structure?.shockPropagation;
+    if (!this.structure || !propagationConfig?.enabled) return out;
+
+    const edges = this.structure.links.edges;
+    for (const shock of this.shocks) {
+      if (shock.endsTick <= this.currentTick) continue;
+      const severity = Math.max(0, 1 - shock.supplyMultiplier);
+      if (severity <= 0) continue;
+
+      // 幅優先で maxHops まで。減衰が minEffect を下回ったら止める。
+      let frontier: { itemId: string; effect: number; hops: number }[] = [
+        { itemId: shock.itemId, effect: severity, hops: 0 },
+      ];
+      const visited = new Set<string>([shock.itemId]);
+      while (frontier.length > 0) {
+        const next: { itemId: string; effect: number; hops: number }[] = [];
+        for (const node of frontier) {
+          if (node.hops >= propagationConfig.maxHops) continue;
+          for (const edge of edges.filter((e) => e.from === node.itemId)) {
+            const effect = node.effect * edge.weight * propagationConfig.decayPerHop;
+            if (effect < propagationConfig.minEffect) continue;
+            if (visited.has(edge.to)) continue;
+            visited.add(edge.to);
+            const list = out.get(edge.to) ?? [];
+            list.push({ fromItemId: shock.itemId, hops: node.hops + 1, effect: round2(effect) });
+            out.set(edge.to, list);
+            next.push({ itemId: edge.to, effect, hops: node.hops + 1 });
+          }
+        }
+        frontier = next;
+      }
+    }
+    return out;
+  }
+
+  /** 直撃と伝播を合わせた実効の供給倍率。 */
+  private effectiveSupply(itemId: string, propagated: Map<string, PropagatedEffect[]>): number {
+    const direct = this.shockFor(itemId)?.supplyMultiplier ?? 1;
+    const effects = propagated.get(itemId) ?? [];
+    const reduction = effects.reduce((sum, e) => sum + e.effect, 0);
+    return clamp(direct * (1 - reduction), 0.02, 1);
   }
 
   get tick(): number {
@@ -88,6 +170,7 @@ export class MarketSimulation {
   step(): void {
     this.currentTick += 1;
     this.shocks = this.shocks.filter((s) => s.endsTick > this.currentTick);
+    const propagated = this.propagation();
 
     for (const runtime of this.runtimes) {
       const shockRoll = this.rng.next();
@@ -98,8 +181,7 @@ export class MarketSimulation {
         this.shocks.push(this.makeScheduledShock(runtime.item.id, shockShape));
       }
 
-      const shock = this.shockFor(runtime.item.id);
-      const supplyMultiplier = shock ? shock.supplyMultiplier : 1;
+      const supplyMultiplier = this.effectiveSupply(runtime.item.id, propagated);
 
       // 在庫が目標を割ったら補充が増える（平均回帰）。ショックはこの補充側を絞る。
       const deficit = 1 - runtime.stock / runtime.item.targetStock;
@@ -156,6 +238,7 @@ export class MarketSimulation {
   }
 
   state(now: number): MarketState {
+    const propagated = this.propagation();
     return {
       tick: this.currentTick,
       seed: this.seed,
@@ -166,10 +249,31 @@ export class MarketSimulation {
         stock: round2(r.stock),
         priceDelta: round2(r.price - r.prevPrice),
         shock: this.shockFor(r.item.id) ?? null,
+        supplyMultiplier: round2(this.effectiveSupply(r.item.id, propagated)),
+        propagation: propagated.get(r.item.id) ?? [],
       })),
       shocks: [...this.shocks],
+      stalls: this.stalls(),
       updatedAt: now,
     };
+  }
+
+  /** カテゴリ単位の値が正。stall はその分布。 */
+  stalls(): MarketStallState[] {
+    const out: MarketStallState[] = [];
+    for (const runtime of this.runtimes) {
+      const shares = this.stallShares.get(runtime.item.id) ?? [];
+      for (const share of shares) {
+        out.push({
+          id: share.id,
+          itemId: runtime.item.id,
+          stock: round2(runtime.stock * share.stockShare),
+          price: round2(runtime.price * share.priceFactor),
+          provisional: true,
+        });
+      }
+    }
+    return out;
   }
 
   /** ヘッドレス実行と再現テストの照合に使う。 */

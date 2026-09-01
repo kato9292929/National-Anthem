@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { PaymentLeg } from '@na/shared';
 import { loadPrivacyConfig, loadX402Config } from '@na/shared/node';
 import { MemoryEventLog } from '../store/event-log.js';
-import { createMockMxe, PrivacyError, PrivateGateway } from '../privacy/gateway.js';
+import { createHttpMxeClient, createMockMxe, PrivacyError, PrivateGateway } from '../privacy/gateway.js';
 import { PaymentRecordStore } from '../privacy/records.js';
 import { AddressLeakError, findAddresses } from '../privacy/redact.js';
 import { withX402 } from '../x402/client.js';
@@ -132,4 +132,74 @@ test('Gateway 経由で x402 が一周し、ログにアドレスが残らない
     await resource.close();
     await facilitator.close();
   }
+});
+
+test('アドレス検査の境界: 桁が足りないものは捕まえない', () => {
+  assert.equal(findAddresses({ a: '0x' + 'a'.repeat(39) }).length, 0, 'EVM は 40 桁未満なら対象外');
+  assert.equal(findAddresses({ a: '0x' + 'a'.repeat(40) }).length, 1);
+  assert.equal(findAddresses({ a: 'a'.repeat(31) }).length, 0, 'base58 は 32 文字未満なら対象外');
+  assert.equal(findAddresses({ a: 'a'.repeat(32) }).length, 1);
+  assert.equal(findAddresses({ a: 'a'.repeat(45) }).length, 0, 'base58 の想定より長いものは別物として扱う');
+});
+
+test('アドレス検査: キー・入れ子・配列も見る', () => {
+  const inKey = findAddresses({ [leg.payTo]: 'ok' });
+  assert.equal(inKey.length, 1, 'キー側のアドレスを見逃している');
+  assert.match(inKey[0]!.path, /<key>/);
+
+  assert.equal(findAddresses({ a: { b: [{ c: leg.payTo }] } }).length, 1);
+  assert.equal(findAddresses([leg.payTo, 'safe']).length, 1);
+});
+
+test('アドレス検査は取りこぼすより余分に捕まえる側に倒す', () => {
+  // 長い英数字の参照値は弾かれる。安全側の誤検知であることを仕様として固定する。
+  const store = new PaymentRecordStore(new MemoryEventLog(), privacyConfig.recording);
+  assert.throws(() => store.record({ payment_valid: true, ref: 'a'.repeat(36) }), /ウォレットアドレスらしき値/);
+  // 業務側の参照は短いので通る。
+  assert.doesNotThrow(() => store.record({ payment_valid: true, ref: 'commission-0001' }));
+});
+
+test('Gateway: HTTP エラー・非 JSON・null・配列をすべて落とす', async () => {
+  const cases: { impl: typeof fetch; pattern: RegExp }[] = [
+    { impl: async () => new Response('nope', { status: 500 }), pattern: /500 を返した/ },
+    { impl: async () => new Response('not json', { status: 200 }), pattern: /JSON として読めない/ },
+    { impl: async () => new Response('null', { status: 200 }), pattern: /オブジェクトでない/ },
+    { impl: async () => new Response('[]', { status: 200 }), pattern: /オブジェクトでない/ },
+  ];
+  for (const { impl, pattern } of cases) {
+    const gateway = new PrivateGateway(createHttpMxeClient('http://mxe.invalid', impl), privacyConfig);
+    await assert.rejects(gateway.verify({ payload: {}, leg }), pattern);
+  }
+});
+
+test('Gateway: payment_valid が無い / 余分なフィールドがある応答は通さない', async () => {
+  const cases: { body: unknown; pattern: RegExp }[] = [
+    { body: {}, pattern: /payment_valid（真偽値）が無い/ },
+    { body: { valid: true }, pattern: /許可外のフィールド/ },
+    { body: { payment_valid: true, payer: '0x' + 'a'.repeat(40) }, pattern: /許可外のフィールド/ },
+    { body: { payment_valid: true, amount: '10000' }, pattern: /許可外のフィールド/ },
+    { body: { payment_valid: 1 }, pattern: /payment_valid（真偽値）が無い/ },
+  ];
+  for (const { body, pattern } of cases) {
+    const gateway = new PrivateGateway({ id: 'x', verify: () => Promise.resolve(body) }, privacyConfig);
+    await assert.rejects(gateway.verify({ payload: {}, leg }), pattern);
+  }
+});
+
+test('Gateway は入力を外に持ち出さない（応答に載せ替えない）', async () => {
+  let seen: unknown = null;
+  const gateway = new PrivateGateway(
+    {
+      id: 'spy',
+      verify: (input) => {
+        seen = input;
+        return Promise.resolve({ payment_valid: true });
+      },
+    },
+    privacyConfig,
+  );
+  const result = await gateway.verify({ payload: { payer: leg.payTo }, leg });
+  assert.deepEqual(result, { payment_valid: true });
+  assert.equal(Object.keys(result).length, 1, '返るのは payment_valid だけ');
+  assert.ok(seen !== null, 'MXE には渡っている（外に出るのは bool だけ）');
 });

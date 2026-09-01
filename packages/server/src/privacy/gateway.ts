@@ -81,7 +81,11 @@ export function createHttpMxeClient(url: string, fetchImpl: typeof fetch = fetch
       if (!res.ok) {
         throw new PrivacyError(`Gateway /verify が ${res.status} を返した`);
       }
-      return (await res.json()) as unknown;
+      try {
+        return (await res.json()) as unknown;
+      } catch (cause) {
+        throw new PrivacyError(`Gateway /verify の応答を JSON として読めない: ${(cause as Error).message}`);
+      }
     },
   };
 }

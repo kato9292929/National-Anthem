@@ -18,6 +18,10 @@ const configPath = process.env.NA_WORLD_CONFIG
   ? new URL(process.env.NA_WORLD_CONFIG, `file://${process.cwd()}/`)
   : new URL('../world/world.config.json', import.meta.url);
 const config = JSON.parse(readFileSync(configPath, 'utf8'));
+// room の定義も、world config と同じツリーから読む（config 差し替えの確認に使う）。
+const treeRoot = new URL('./', configPath.href.replace(/world\/[^/]+$/, ''));
+const roomsConfig = JSON.parse(readFileSync(new URL('config/rooms.config.json', treeRoot), 'utf8'));
+const gatedRooms = roomsConfig.rooms.filter((room) => room.minStanding > 0);
 const expectedIds = [
   ...config.stall_categories.imports.map((c) => c.id),
   ...config.stall_categories.exports.map((c) => c.id),
@@ -238,6 +242,20 @@ try {
     agentAfter.gate.blockers.map((b) => b.id).join(', '),
   );
 
+  const adapters = await (await fetch(`${BASE}/api/adapters/status`)).json();
+  check(
+    adapters.adapters.length > 0 && adapters.adapters.every((a) => a.verified === false),
+    '外部接続の口はすべて未検証（区分B）',
+    adapters.adapters.map((a) => `${a.id}:${a.mode}`).join(', '),
+  );
+
+  const marketState = await (await fetch(`${BASE}/api/market/state`)).json();
+  check(
+    marketState.stalls.length > marketState.items.length && marketState.stalls.every((s) => s.provisional === true),
+    '1 カテゴリを複数の stall が分け持つ（分布は仮値）',
+    `${marketState.stalls.length} 軒 / ${marketState.items.length} 品目`,
+  );
+
   const storefront = await (await fetch(`${BASE}/api/storefront/listing`)).json();
   check(
     storefront.rank === 'secondary' && storefront.subordinateTo === 'commission-board',
@@ -253,7 +271,12 @@ try {
   await sleep(400);
   // M3: standing が room gate に効く（mock で一周）。
   const gatesBefore = await page.evaluate(() => window.__na_debug.gates());
-  check(gatesBefore.length > 0, 'standing で開閉する門が立っている', `${gatesBefore.length} 門`);
+  check(
+    gatesBefore.length === gatedRooms.length &&
+      gatesBefore.every((g) => gatedRooms.some((r) => r.id === g.roomId && r.minStanding === g.required)),
+    '門は config の room 定義を反映する',
+    gatesBefore.map((g) => `${g.roomId}>=${g.required}`).join(', '),
+  );
   check(
     gatesBefore.every((g) => !g.open),
     '初期 standing では門が閉じている',
@@ -280,13 +303,16 @@ try {
     `z=${blockedByGate.z.toFixed(2)} / 門 z=${blockedByGate.gateZ.toFixed(2)}`,
   );
 
-  for (let i = 0; i < 5; i++) {
+  // しきい値は config 由来なので、開くまで押印を積む（回数を決め打ちしない）。
+  for (let i = 0; i < 30; i++) {
     const res = await fetch(`${BASE}/api/identity/reputation`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'commission_completed', ref: `smoke-${i}`, note: 'smoke' }),
     });
     if (!res.ok) throw new Error(`reputation の記録に失敗: ${res.status}`);
+    const session = await (await fetch(`${BASE}/api/identity/session`)).json();
+    if (session.rooms.some((room) => room.gate.allowed && room.gate.required > 0)) break;
   }
   await page.waitForFunction(() => window.__na_debug.gates().some((g) => g.open), null, { timeout: 8000 });
   const opened = await page.evaluate(() => ({

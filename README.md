@@ -11,6 +11,7 @@
 | `packages/client` | WebGL 一人称クライアント。グレイボックスの市場空間と HUD |
 | `config/` | world 以外の設定（identity・room・以降のマイルストーン分）。ソースにリテラルを書かない |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
+| `docs/commission-flow-options.md` | commission_flow の選択肢（設計のみ・未確定。実装はしていない） |
 | `docs/world-spec-v0.md` | 世界設定スペック v0（正典）。差別化指示書 §3「世界設定と固有名」と「経済の重心」の確定分 |
 | `world/world.config.json` | 上記の機械可読版。固有名・取引カテゴリ・参加者モデル・経済の重心・演出パラメータ |
 
@@ -35,7 +36,8 @@ npm test                  # サーバのテスト（config / env / 市場シム 
 npm run sim -- --ticks 200 --every 40 --shock-at 60   # ヘッドレスで市場を回す
 npm run dev:server        # http://localhost:8787
 npm run dev:client        # http://localhost:5173（/api はサーバへプロキシ）
-npm run smoke             # Chromium で M2/M3 の受け入れを確認し artifacts/ に画面を残す
+npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し artifacts/ に画面を残す
+npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
 npm run agent:dry-run     # M6 の dry-run。1 サイクルのトークン量とコストを出す（LLM 呼び出し 0）
 
 # config 差し替えだけで表示が変わることの確認（ソースは触らない）
@@ -57,6 +59,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `POST /api/commission/action` | 委託の操作（open / propose / agree / fund / leg / settle / refund / dispute / resolve） |
 | `GET /api/storefront/listing` | 物販（副モジュール）の品揃え。価格・在庫は M1 の市場状態 |
 | `POST /api/storefront/buy` | 物販の購入 |
+| `GET /api/adapters/status` | 外部接続の口（facilitator / MXE / ERC-8004 / DCW / チェーン）の状態。すべて未検証 |
 | `GET /api/agent/status` | モデル・キャッシュ・tick・予算・稼働前ゲートの判定（秘密は出さない） |
 | `GET /api/privacy/status` | Gateway の状態・記録方針・claim の線（秘密は出さない） |
 | `GET /api/x402/status` | x402 の protocol / facilitator / レール状態・署名可否（秘密は出さない） |
@@ -104,6 +107,7 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 | 実レール着金 | 未検証。区分A は mock facilitator と mock リソースサーバで一周を確認 |
 | LLM のトークン実測 | dry-run はローカル概算。`count_tokens` による実測と実 API 呼び出しは未消化 |
 | 料金表 | `config/agent.config.json` の `pricing`（as_of 2026-06-24）は変動するので未検証扱い |
+| 外部接続の adapter | facilitator / MXE / ERC-8004 / Circle DCW / チェーンのいずれも `verified: false`。ERC-8004・DCW・チェーンは呼び出し形が未確定なので**未接続のまま落ちる**（偽の応答を作らない） |
 | Arcium MXE / Gateway | `config/privacy.config.json` の gateway URL は未指定（`TBD`）。実 MXE 投入・実 RPC は未検証。区分A は bool を返す mock MXE で結線を確認 |
 
 ## x402（M4）
@@ -181,6 +185,28 @@ principal が委託を出す → 代理エージェントが各レグを実行�
 委託 → 片方の合意では締結しない → 両者合意で締結 → escrow → レグ → 封印精算 → release →
 `payment_valid` だけの記録が残る。
 
+## ビジュアル確定待ちの間に進めた分
+
+3D デザイン（`presentation.*` とアセット）は未着手のまま、非依存のところだけ深掘りした。
+
+| 項目 | 中身 |
+| --- | --- |
+| standing の効き方 | 押印に時間減衰（半減期は仮値）。直近窓の重大事故は点数に関わらず門を閉じる。room ごとに最低押印数。判定理由を `reason` で返し、内訳（`breakdown`）を必ず添える。数値も方針も `confirmed: false` のまま |
+| 市場シムの拡張 | カテゴリ間の連関（`config/market.config.json`）を通じたショック伝播（最大ホップ・減衰・下限つき、出所を記録）。1 カテゴリを複数 stall が分け持つ在庫分布と値付けのばらつき。決定論と「Math.random / fetch 非混入」は維持 |
+| x402 の異常系 | feePayer 欠落・期限切れ 402・レール不一致（ネットワークだけ／資産だけ一致）・payTo 不一致・二重 settle（facilitator が replay を弾く）・settle 失敗・ヘッダ欠落／破損 |
+| privacy の異常系 | Gateway の HTTP エラー／非 JSON／null／配列／余分なフィールド／`payment_valid` が真偽値でない。アドレス検査の境界（桁数・キー側・入れ子・配列）と、安全側に倒す誤検知の明文化 |
+| escrow / arbitration | release と refund の競合、二重 fund、payment_valid 無しの release 拒否、arbiter の権限境界（未知 identity・当事者・`requiresArbiter: false`）、レグ失敗中の精算拒否、数量とレグ重複の入力検査 |
+| commission_flow | **設計のみ**。`docs/commission-flow-options.md` に legs / remote_handling / settlement_unit の選択肢と影響範囲を列挙。config は `TBD` / `confirmed: false` のまま、実装はしていない |
+| 区分B の下ごしらえ | facilitator / MXE / ERC-8004 / Circle DCW / チェーンの adapter interface と mock。mock は値に `mock:` を残し `onChain: false`。未接続の口は呼ばれたら「何が要るか」を載せて落ちる |
+
+### presentation 層を重ねるだけで入る状態の確認
+
+- `npm test` の layering テスト: ロジックが `presentation.*` を読んでいないこと、クライアントの色の値が
+  `greybox.ts` の 1 ファイルに閉じていること、固有名と品目 id がソースにリテラルで無いこと。
+- `npm run smoke:swap`: 固有名を確定させ、カテゴリを 2 件足し、room を 2 室に減らして
+  しきい値を変え、1 カテゴリの stall 数を変えた**別 config ツリー**で同じ smoke を通す。
+  ソース修正ゼロで、stall 数・門の数としきい値・市場名の表示がすべて追随する。
+
 ## 実装するときの決まり
 
 - 固有名（市場名・地区名・NPC・stall）はソースにリテラルで書かず、`world/world.config.json` から引く。
@@ -205,6 +231,10 @@ principal が委託を出す → 代理エージェントが各レグを実行�
 | `config/identity.config.json` の `standing` | 初期値・重み・上下限は仮値（`confirmed: false`） | v0 の評判仕様が確定したら |
 | `config/rooms.config.json` | room の固有名（`ROOM_NAME_*`）としきい値は仮値。gate 判定は `provisional: true` を返す | 加藤さん確定時。config 差し替えのみ |
 | `config/commission.config.json` の `flow` / `escrow.unit` / `arbitration` / `reputation` | 精算単位・レグ・遠隔地の扱い・重み対応はすべて仮値（`confirmed: false`）。委託は `provisional: true` で回る | v0 の commission_flow が確定したら |
+| `config/market.config.json` | カテゴリ間の連関・ショック伝播・stall 分布はすべて仮値（`confirmed: false`）。史実の断定ではない | v0 の経済仕様が確定したら |
+| `config/identity.config.json` の `standing.policy` | 半減期・直近窓・重大事故の扱いは仮値 | 評判仕様の確定時 |
+| `config/rooms.config.json` の `minImpressions` / `requireNoRecentSevere` | 仮値。gate 判定は `provisional: true` を返し続ける | 加藤さん確定時 |
+| `config/x402.config.json` の `legExpiryField` | 402 の有効期限がどのフィールドで来るかは未確定（`legExpiryConfirmed: false`）。期限が無い 402 は「期限なし」として扱い、既定値を置かない | 実 facilitator の応答が確認できたら |
 | `config/agent.config.json` の `cadence` | tick 頻度・1 回あたり入力トークン・tick あたり呼び出し数はすべて null（未確定） | 加藤さん確定時。埋まるまでゲートが開かない |
 | `packages/server/src/agent/dry-run.ts` の `ASSUMED_OUTPUT_TOKENS_PER_CALL` | 出力トークンの想定値 320 は仮値 | 実測（区分B）で置き換える |
 | `.env.example` の M3 以降のキー | `NA_WALLET_PRIVATE_KEY` / `NA_X402_FACILITATOR_URL` / `NA_ARCIUM_CLUSTER_URL` / `NA_LLM_API_KEY` はキー名自体が仮 | 各マイルストーン着手時 |
