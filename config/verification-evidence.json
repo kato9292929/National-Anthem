@@ -1,0 +1,5 @@
+{
+  "$comment": "区分B の実確認の証拠。verified:true にできるのは、ここに証拠がある項目だけ。実装が終わったからという理由では上げない。証拠は npm run verify:b が実環境で記録する。",
+  "version": "0",
+  "records": []
+}

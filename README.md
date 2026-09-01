@@ -12,6 +12,7 @@
 | `config/` | world 以外の設定（identity・room・市場構造・x402・privacy・agent・commission・presentation）。ソースにリテラルを書かない |
 | `packages/client/src/presentation/` | 見た目の受け口（マテリアルのスロット・シェーダ・ポスプロ pipeline）。色や強度は config から差す |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
+| `docs/verification-b-runbook.md` | 区分B の実確認ランブック（段ごとに要る鍵・ネットワーク・仕様と、現状の詰まり） |
 | `docs/commission-flow-options.md` | commission_flow の選択肢（設計のみ・未確定。実装はしていない） |
 | `docs/world-spec-v0.md` | 世界設定スペック v0（正典）。差別化指示書 §3「世界設定と固有名」と「経済の重心」の確定分 |
 | `world/world.config.json` | 上記の機械可読版。固有名・取引カテゴリ・参加者モデル・経済の重心・演出パラメータ |
@@ -41,6 +42,7 @@ npm run dev:client        # http://localhost:5173（/api はサーバへプロ�
 npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し artifacts/ に画面を残す
 npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
 npm run agent:dry-run     # M6 の dry-run。1 サイクルのトークン量とコストを出す（LLM 呼び出し 0）
+npm run verify:b          # 区分B の実確認ハーネス。通った段だけ証拠を記録する
 
 # config 差し替えだけで表示が変わることの確認（ソースは触らない）
 NA_WORLD_CONFIG=path/to/other.config.json npm run smoke
@@ -98,7 +100,29 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 区分Bが未消化でも実装は進める。条件は「記載仕様にのみ従う／未検証ラベルをコードと README に残す／
 想定外レスポンスは握りつぶさず大きく失敗する」。
 
-### 未検証（区分B）の一覧
+### verified は証拠でしか上がらない
+
+`verified: true` にできるのは `config/verification-evidence.json` に証拠レコードがある項目だけ。
+**実装が終わったからという理由では上げない。** 証拠の無い `true` はサーバ起動時とテストで
+`UnbackedVerificationError` として落ちる。証拠の書き方と target の対応表は
+`docs/verification-b-runbook.md`。
+
+### 区分B の現況: 4 段すべて未消化（`verified` は全件 `false`）
+
+`npm run verify:b` をこの開発環境で実行した結果。証拠レコードは 0 件。
+
+| 段 | 状態 | 止まっている理由 |
+| --- | --- | --- |
+| 2. 実署名 | blocked | 鍵（`NA_WALLET_PRIVATE_KEY`）未設定。加えて **X-PAYMENT payload の形・Base の署名方式・chainId・verifyingContract・DCW 署名 API の形が未指定**。推測で埋めると偽署名になるので実装していない |
+| 1. 実 facilitator・実着金 | blocked | 開発環境の egress allowlist に `facilitator.payai.network` が無く 403。**402 を返す実リソースのエンドポイントも未指定**。2 が前提 |
+| 3. 実 MXE | blocked | `NA_ARCIUM_CLUSTER_URL` 未設定。**検証回路の呼び出し形が未指定**。Gateway 側の受け口（`payment_valid` のみ受ける・アドレスを残さない）は実装済み |
+| 4. 実 identity | blocked | **ERC-8004 レジストリのアドレスと ABI、チェーン RPC、DCW の wallet API の形が未指定**。agentId と DCW アドレスは config に入っている |
+
+この環境は外向きが allowlist 制で、facilitator / Solana RPC / Base RPC / Circle API はいずれも 403。
+鍵も入っていない。**したがって tx ハッシュも実アドレスも記録できていない。**
+必要な入力が揃った環境で `npm run verify:b` を回すと、通った段の証拠だけが記録される。
+
+### 未検証（区分B）の一覧（すべて未消化）
 
 | 箇所 | 内容 |
 | --- | --- |

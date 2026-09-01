@@ -1,8 +1,11 @@
 import { resolve } from 'node:path';
 import {
+  assertVerifiedHasEvidence,
+  collectVerifiedFlags,
   seedFrom,
   unconfirmedNames,
   unconfirmedPresentation,
+  verificationSummary,
   type IdentityConfig,
   type RoomsConfig,
   type WorldConfig,
@@ -11,6 +14,7 @@ import {
   type MarketStructureConfig,
   type PresentationConfig,
   type PrivacyConfig,
+  type VerificationEvidence,
   type X402Config,
 } from '@na/shared';
 import {
@@ -19,6 +23,7 @@ import {
   loadIdentityConfig,
   loadMarketStructureConfig,
   loadPresentationConfig,
+  loadVerificationEvidence,
   loadPrivacyConfig,
   loadRoomsConfig,
   loadWorldConfig,
@@ -54,6 +59,7 @@ export interface Runtime {
   x402Config: X402Config;
   x402: X402Service;
   privacyConfig: PrivacyConfig;
+  evidence: VerificationEvidence;
   gateway: PrivateGateway;
   paymentRecords: PaymentRecordStore;
   /** 実 MXE に向いているか（未検証）、mock か。 */
@@ -114,6 +120,13 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     forceMock: env.get('NA_X402_MOCK') === '1',
   });
 
+  // verified:true には証拠を要求する。実装が終わったからという理由では上がらない。
+  const evidence = loadVerificationEvidence(process.env).value;
+  assertVerifiedHasEvidence({
+    flags: collectVerifiedFlags({ identity: identityConfig, x402: x402Config, privacy: privacyConfig }),
+    evidence,
+  });
+
   const commissionConfig = loadCommissionConfig(process.env).value;
   const board = new CommissionBoard({
     config: commissionConfig,
@@ -142,6 +155,7 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     x402Config,
     x402,
     privacyConfig,
+    evidence,
     gateway,
     paymentRecords,
     gatewayMode,
@@ -213,6 +227,18 @@ export function printStartupLabels(runtime: Runtime): void {
       `返るのは ${runtime.privacyConfig.response.allowedFields.join(', ')} のみ`,
   );
   console.log(`[privacy] ${runtime.privacyConfig.claims.claim_ja}`);
+  const verification = verificationSummary({
+    flags: collectVerifiedFlags({
+      identity: runtime.identityConfig,
+      x402: runtime.x402Config,
+      privacy: runtime.privacyConfig,
+    }),
+    evidence: runtime.evidence,
+  });
+  console.log(
+    `[区分B] 実確認 ${verification.verified}/${verification.total}` +
+      (verification.pending.length > 0 ? ` / 未消化: ${verification.pending.join(', ')}` : ''),
+  );
   console.log(
     `[adapters] ${runtime.adapters
       .statuses()

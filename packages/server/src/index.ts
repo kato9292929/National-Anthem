@@ -1,4 +1,4 @@
-import { unconfirmedPresentation } from '@na/shared';
+import { collectVerifiedFlags, unconfirmedPresentation, verificationSummary } from '@na/shared';
 import { runCommissionAction } from './commission/actions.js';
 import { createHttpServer } from './http.js';
 import { createRuntime, printStartupLabels, resolveClientDist } from './runtime.js';
@@ -82,6 +82,18 @@ function main(): void {
       },
     }),
     adapterStatus: () => ({
+      verification: {
+        ...verificationSummary({
+          flags: collectVerifiedFlags({
+            identity: runtime.identityConfig,
+            x402: runtime.x402Config,
+            privacy: runtime.privacyConfig,
+          }),
+          evidence: runtime.evidence,
+        }),
+        records: runtime.evidence.records.length,
+        rule: 'verified:true には証拠レコードが要る。実装完了では上げない',
+      },
       adapters: runtime.adapters.statuses(),
       notes: {
         scope: '実キー・実ネットワークが要る接続は区分B（加藤さん環境で消化）',
