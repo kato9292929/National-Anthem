@@ -24,6 +24,11 @@ export const GREYBOX = {
     counterOverhang: 0.5,
     labelHeight: 3.0,
     labelScale: { x: 2.3, y: 1.15 },
+    /** 日除け布（通路側に張り出す薄い庇）。 */
+    awningDepth: 1.5,
+    awningThickness: 0.1,
+    awningHeight: 2.25,
+    awningDrop: 0.35,
   },
   player: {
     eyeHeight: 1.7,

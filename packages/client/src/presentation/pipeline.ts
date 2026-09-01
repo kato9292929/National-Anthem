@@ -93,12 +93,17 @@ export class PostPipeline {
 
   private ensureTargets(width: number, height: number): [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget] {
     if (!this.targets) {
-      const make = (): THREE.WebGLRenderTarget =>
-        new THREE.WebGLRenderTarget(width, height, {
+      const make = (): THREE.WebGLRenderTarget => {
+        const target = new THREE.WebGLRenderTarget(width, height, {
           minFilter: THREE.LinearFilter,
           magFilter: THREE.LinearFilter,
           depthBuffer: true,
         });
+        // 組み込み材質がここへ描くときに sRGB へ変換されるようにする。
+        // パスは素の ShaderMaterial なので、以降は sRGB のまま扱って画面へ出す。
+        target.texture.colorSpace = THREE.SRGBColorSpace;
+        return target;
+      };
       this.targets = [make(), make()];
     } else if (this.targets[0].width !== width || this.targets[0].height !== height) {
       for (const target of this.targets) target.setSize(width, height);
@@ -116,6 +121,13 @@ export class PostPipeline {
     };
     for (const key of definition.paramKeys) {
       uniforms[uniformName(key)] = { value: param(pass.params, key, `postprocess.passes(${pass.id}).params`) };
+    }
+    for (const key of definition.colorKeys ?? []) {
+      const value = pass.colorParams?.[key];
+      if (value === undefined) {
+        throw new Error(`postprocess.passes(${pass.id}).colorParams に ${key} が無い`);
+      }
+      uniforms[uniformName(key)] = { value: new THREE.Color(value) };
     }
     return {
       id: pass.id,

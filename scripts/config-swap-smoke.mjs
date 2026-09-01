@@ -43,14 +43,16 @@ try {
   const presentationPath = join(tree, 'config/presentation.config.json');
   const presentation = JSON.parse(readFileSync(presentationPath, 'utf8'));
   presentation.mode = 'stylized';
-  presentation.palette.colors.floor = '#4a3f35';
-  presentation.palette.colors.wall = '#2b2622';
-  presentation.materials.slots.floor.params = { bands: 4, rim: 0.15, warp: 0.03, tint: 0.05 };
-  presentation.materials.slots.stall.params = { bands: 3, rim: 0.25, warp: 0.02, tint: 0.08 };
+  presentation.palette.colors.floorBase = '#4a3f35';
+  presentation.palette.colors.floorShadow = '#241d16';
+  presentation.palette.colors.wallBase = '#6d5f4c';
+  presentation.palette.colors.wallShadow = '#2b2622';
+  presentation.materials.slots.floor.params = { bands: 6, rim: 0.15, warp: 0.1, tint: 0.05 };
+  presentation.materials.slots.stall.params = { bands: 2, rim: 0.25, warp: 0.6, tint: 0.08 };
   presentation.postprocess.passes = [
-    { id: 'posterize', enabled: true, strength: 0.6, params: { steps: 6 } },
-    { id: 'outline', enabled: true, strength: 0.5, params: { threshold: 0.15 } },
-    { id: 'grain', enabled: true, strength: 0.06, params: { scale: 3, speed: 0.2 } },
+    { id: 'posterize', enabled: true, strength: 0.6, params: { levels: 3 } },
+    { id: 'dither', enabled: true, strength: 0.5, params: { scale: 2 } },
+    { id: 'grain', enabled: true, strength: 0.2, params: { scale: 3, speed: 0.2 } },
   ];
   writeFileSync(presentationPath, `${JSON.stringify(presentation, null, 2)}\n`);
 

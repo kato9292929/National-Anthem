@@ -12,6 +12,19 @@ export type RenderMode = 'greybox' | 'stylized';
 export const POST_PASS_IDS = ['tonemap', 'posterize', 'dither', 'outline', 'grain', 'colorGrade'] as const;
 export type PostPassId = (typeof POST_PASS_IDS)[number];
 
+/**
+ * パスごとに要るパラメータ。config 側で欠けていたら読み込み時に落とす
+ * （ブラウザまで持ち越さない）。
+ */
+export const PASS_REQUIRED_PARAMS: Record<PostPassId, { params: string[]; colorParams: string[] }> = {
+  tonemap: { params: ['exposure'], colorParams: [] },
+  posterize: { params: ['levels'], colorParams: [] },
+  dither: { params: ['scale'], colorParams: [] },
+  outline: { params: ['threshold'], colorParams: [] },
+  grain: { params: ['scale', 'speed'], colorParams: [] },
+  colorGrade: { params: ['saturation', 'gamma', 'shadowLift'], colorParams: ['shadowColor'] },
+};
+
 /** マテリアルのシェーダ種別。 */
 export const MATERIAL_SHADER_IDS = ['stylized-surface'] as const;
 export type MaterialShaderId = (typeof MATERIAL_SHADER_IDS)[number];
@@ -28,8 +41,11 @@ export interface MaterialSlot {
 export interface PostPassConfig {
   id: PostPassId;
   enabled: boolean;
+  /** 効き量（0..1）。パスごとの内部スケールは shader 側に持つ。 */
   strength: number;
   params: Record<string, number>;
+  /** 色で渡すパラメータ（暗部の寄せ先など）。無いパスもある。 */
+  colorParams?: Record<string, string>;
 }
 
 /** 値の熟度。first-pass = 方向を翻訳しただけの一次値（要調整）。 */
@@ -52,7 +68,15 @@ export interface PresentationConfig {
   lighting: {
     confirmed: boolean;
     ambientIntensity: number;
+    /** 環境光の色（palette のキー名）。 */
+    ambientColorKey: string;
     keyIntensity: number;
+    /** キーライトの色（palette のキー名）。 */
+    keyColorKey: string;
+    /** 低い斜光の仰角（度）。 */
+    keyElevationDeg: number;
+    /** 方位角（度）。実参照から確定するまでは現状維持の値。 */
+    keyAzimuthDeg: number;
     fogNear: number;
     fogFar: number;
   };
@@ -140,11 +164,27 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
     if (strength < 0 || strength > 1) {
       throw new Error(`${source}: postprocess.passes[${i}].strength は 0..1（実際: ${strength}）`);
     }
+    const colorParams = pass['colorParams'];
+    const parsedParams = numberMap(pass['params'], source, `postprocess.passes[${i}].params`);
+    const parsedColors =
+      colorParams === undefined ? {} : stringMap(colorParams, source, `postprocess.passes[${i}].colorParams`);
+    const required = PASS_REQUIRED_PARAMS[id];
+    for (const key of required.params) {
+      if (parsedParams[key] === undefined) {
+        throw new Error(`${source}: postprocess.passes[${i}](${id}).params に ${key} が無い`);
+      }
+    }
+    for (const key of required.colorParams) {
+      if (parsedColors[key] === undefined) {
+        throw new Error(`${source}: postprocess.passes[${i}](${id}).colorParams に ${key} が無い`);
+      }
+    }
     return {
       id,
       enabled: bool(pass['enabled'], source, `postprocess.passes[${i}].enabled`),
       strength,
-      params: numberMap(pass['params'], source, `postprocess.passes[${i}].params`),
+      params: parsedParams,
+      ...(colorParams === undefined ? {} : { colorParams: parsedColors }),
     };
   });
 
@@ -172,7 +212,11 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
     lighting: {
       confirmed: bool(lighting['confirmed'], source, 'lighting.confirmed'),
       ambientIntensity: num(lighting['ambientIntensity'], source, 'lighting.ambientIntensity'),
+      ambientColorKey: str(lighting['ambientColorKey'], source, 'lighting.ambientColorKey'),
       keyIntensity: num(lighting['keyIntensity'], source, 'lighting.keyIntensity'),
+      keyColorKey: str(lighting['keyColorKey'], source, 'lighting.keyColorKey'),
+      keyElevationDeg: num(lighting['keyElevationDeg'], source, 'lighting.keyElevationDeg'),
+      keyAzimuthDeg: num(lighting['keyAzimuthDeg'], source, 'lighting.keyAzimuthDeg'),
       fogNear: num(lighting['fogNear'], source, 'lighting.fogNear'),
       fogFar: num(lighting['fogFar'], source, 'lighting.fogFar'),
     },

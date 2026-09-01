@@ -3,7 +3,7 @@ import type { PresentationConfig } from '@na/shared';
 import { GREYBOX } from './greybox.js';
 import type { MarketLayout, StallSlot } from './layout.js';
 import { cssColor } from './presentation/config.js';
-import { stallMaterial, type MaterialSet } from './presentation/materials.js';
+import { clothMaterial, keyLightDirection, stallMaterial, type MaterialSet } from './presentation/materials.js';
 
 /** 看板に描く色。presentation config から作る（ここに色を書かない）。 */
 export interface LabelColors {
@@ -42,6 +42,8 @@ export interface StallObject {
   group: THREE.Group;
   body: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
   counter: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
+  /** 日除け布。 */
+  awning: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
   label: THREE.Sprite;
   labelCanvas: HTMLCanvasElement;
   labelTexture: THREE.CanvasTexture;
@@ -106,13 +108,17 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
 
   scene.add(
     new THREE.HemisphereLight(
-      colorOf(presentation, 'lightSky'),
-      colorOf(presentation, 'lightGround'),
+      colorOf(presentation, presentation.lighting.ambientColorKey),
+      colorOf(presentation, 'floorShadow'),
       presentation.lighting.ambientIntensity,
     ),
   );
-  const key = new THREE.DirectionalLight(colorOf(presentation, 'lightKey'), presentation.lighting.keyIntensity);
-  key.position.set(6, 14, 8);
+  // 低い斜光。向きは config の仰角・方位角から作る。
+  const key = new THREE.DirectionalLight(
+    colorOf(presentation, presentation.lighting.keyColorKey),
+    presentation.lighting.keyIntensity,
+  );
+  key.position.copy(keyLightDirection(presentation).multiplyScalar(40));
   scene.add(key);
 
   const width = layout.halfWidth * 2;
@@ -165,6 +171,7 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
       for (const stall of stalls) {
         stall.body.material = stallMaterial(next, stall.slot.direction, stall.slot.categoryId === focusedStallId);
         stall.counter.material = next.counter;
+        stall.awning.material = clothMaterial(next, stall.slot.direction);
       }
       for (const gate of gates) gate.door.material = gate.open ? next.gateOpen : next.gateClosed;
     },
@@ -310,7 +317,7 @@ function buildStall(slot: StallSlot, materials: MaterialSet, colors: LabelColors
 
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(width, height, depth),
-    slot.direction === 'import' ? materials.stallImport : materials.stallExport,
+    materials.stallWood,
   ) as THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
   body.position.y = height / 2;
   group.add(body);
@@ -319,6 +326,15 @@ function buildStall(slot: StallSlot, materials: MaterialSet, colors: LabelColors
   const counter = new THREE.Mesh(new THREE.BoxGeometry(width, 0.16, counterOverhang), materials.counter);
   counter.position.set(0, counterHeight, depth / 2 + counterOverhang / 2);
   group.add(counter);
+
+  // 日除け布。通路側へ傾けて張り出す薄い庇（頭上なので当たり判定は変えない）。
+  const awning = new THREE.Mesh(
+    new THREE.BoxGeometry(width, GREYBOX.stall.awningThickness, GREYBOX.stall.awningDepth),
+    clothMaterial(materials, slot.direction),
+  ) as THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
+  awning.position.set(0, GREYBOX.stall.awningHeight, depth / 2 + GREYBOX.stall.awningDepth / 2);
+  awning.rotation.x = Math.atan2(GREYBOX.stall.awningDrop, GREYBOX.stall.awningDepth);
+  group.add(awning);
 
   const labelCanvas = document.createElement('canvas');
   labelCanvas.width = 512;
@@ -338,6 +354,7 @@ function buildStall(slot: StallSlot, materials: MaterialSet, colors: LabelColors
     group,
     body,
     counter,
+    awning,
     label,
     labelCanvas,
     labelTexture,

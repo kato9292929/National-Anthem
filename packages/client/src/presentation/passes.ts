@@ -11,6 +11,8 @@ export interface PassDefinition {
   fragment: string;
   /** config の params から uniform に渡すキー。欠けていたら落とす。 */
   paramKeys: string[];
+  /** config の colorParams から vec3 uniform に渡すキー。 */
+  colorKeys?: string[];
   /** 時間 uniform を使うか。 */
   usesTime: boolean;
 }
@@ -41,14 +43,14 @@ export const PASSES: Record<PostPassId, PassDefinition> = {
   },
   posterize: {
     id: 'posterize',
-    paramKeys: ['steps'],
+    paramKeys: ['levels'],
     usesTime: false,
     fragment: `${HEADER}
-      uniform float uSteps;
+      uniform float uLevels;
       void main() {
         vec3 src = texture2D(uTexture, vUv).rgb;
-        float steps = max(uSteps, 2.0);
-        vec3 quantized = floor(src * steps) / (steps - 1.0);
+        float levels = max(uLevels, 2.0);
+        vec3 quantized = floor(src * levels) / (levels - 1.0);
         gl_FragColor = vec4(mix(src, clamp(quantized, 0.0, 1.0), uStrength), 1.0);
       }
     `,
@@ -114,6 +116,8 @@ export const PASSES: Record<PostPassId, PassDefinition> = {
     fragment: `${HEADER}
       uniform float uScale;
       uniform float uSpeed;
+      // strength は 0..1 の効き量。紙目として成立する振れ幅にここで落とす。
+      const float GRAIN_SCALE = 0.22;
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
       }
@@ -121,23 +125,35 @@ export const PASSES: Record<PostPassId, PassDefinition> = {
         vec3 src = texture2D(uTexture, vUv).rgb;
         vec2 p = gl_FragCoord.xy / max(uScale, 1.0) + uTime * uSpeed;
         float n = hash(floor(p)) - 0.5;
-        gl_FragColor = vec4(clamp(src + n * uStrength, 0.0, 1.0), 1.0);
+        gl_FragColor = vec4(clamp(src + n * uStrength * GRAIN_SCALE, 0.0, 1.0), 1.0);
       }
     `,
   },
   colorGrade: {
     id: 'colorGrade',
-    paramKeys: ['shadowShift', 'highlightShift'],
+    paramKeys: ['saturation', 'gamma', 'shadowLift'],
+    colorKeys: ['shadowColor'],
     usesTime: false,
     fragment: `${HEADER}
-      uniform float uShadowShift;
-      uniform float uHighlightShift;
+      uniform float uSaturation;
+      uniform float uGamma;
+      uniform float uShadowLift;
+      uniform vec3 uShadowColor;
+      // 色 uniform は linear で来る。パスは sRGB の値を扱うので合わせる。
+      vec3 toSRGB(vec3 c) {
+        return pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2));
+      }
       void main() {
         vec3 src = texture2D(uTexture, vUv).rgb;
         float l = dot(src, vec3(0.299, 0.587, 0.114));
-        vec3 graded = src;
-        graded.b += (1.0 - l) * uShadowShift;
-        graded.r += l * uHighlightShift;
+
+        // 彩度を落とす（1.0 でそのまま、0 で無彩色）。
+        vec3 graded = mix(vec3(l), src, uSaturation);
+        // 暗部を指定色へ寄せる。明部は動かさない。
+        graded = mix(graded, toSRGB(uShadowColor), (1.0 - l) * uShadowLift);
+        // ガンマ（1 未満で持ち上げ、1 超で沈める）。
+        graded = pow(clamp(graded, 0.0, 1.0), vec3(max(uGamma, 0.01)));
+
         gl_FragColor = vec4(mix(src, clamp(graded, 0.0, 1.0), uStrength), 1.0);
       }
     `,

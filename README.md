@@ -215,7 +215,8 @@ principal が委託を出す → 代理エージェントが各レグを実行�
 見た目の芯は three の自前シェーダ＋ポストプロセスで出す。生成ツールには一切繋いでいない。
 
 **方向は確定**（古代ウルの市場の形・要素 ＋ Donwood 系の暗いディストレス質感）。
-**値は一次案（要調整）** で、`tuning.status: "first-pass"` と全ブロック `confirmed: false` のまま置いてある。
+**値は一次案 v2（要調整）** — 参照イラストからの目視の当たりで hex と実数まで入れてある。
+`tuning.status: "first-pass"` と全ブロック `confirmed: false` のままで、
 正確な hex と各パスの最終強度は加藤さんが実参照から確定する。
 
 ### 構成
@@ -245,14 +246,18 @@ smoke は greybox と stylized の両方を計測する（この環境の SwiftS
 
 ### 一次案の中身（すべて要調整）
 
-| ブロック | 一次案の方向 | 要調整の中心 |
+| ブロック | 一次案 v2 の値 | 要調整の中心 |
 | --- | --- | --- |
-| `palette` | ウルの暖色（生成り・砂・黄土・レンガ褐色）を低彩度で暗く沈める。影は黒寄り、真昼の彩度は出さない | hex 全部。実参照から eyedropper で差し替え |
-| `lighting` | 低い斜光／薄暮寄りの低キー（`ambientIntensity: 0.8` < `keyIntensity: 1.15`）、霧で奥を落とす | 明暗の落差と霧の距離 |
-| `materials` | floor=土/敷石、wall=日干しレンガの塊、stall=木枠＋日除け布、counter/gate=木・石。階調の量子化（bands 3〜5）と揺らぎで手描きの崩れ | bands / rim / warp / tint の各値 |
-| `postprocess` | Donwood 質感の芯を **posterize → outline → colorGrade → grain** の順で積む。dither は任意なので無効、tonemap は据え置き | 各パスの強度とパス枚数（フレーム予算とのトレードオフ） |
+| `palette` | wall `#8B7355`/影 `#6B5842`、floor `#5A4C3A`/影 `#403425`、stall 木枠 `#4A3B2A`、日除け布 暖 `#9C4A2E` / 寒 `#3E4A52`、counter `#4A3B2A`、gate 石 `#6B5F4E`、sky `#1A1611`、fog `#0E0B08` | hex 全部。指定のあった wall/floor 以外の `*Shadow` は base からの導出値 |
+| `lighting` | ambient `0.85` / `#2A2018`、key `1.15` / `#C8955A`（夕方寄りアンバー）、仰角 15°、霧 22→110 | 方位角（40°）は未指定のため暫定。明暗の落差 |
+| `materials` | floor bands 4 / warp 0.5、wall bands 4 / warp 0.3、stall bands 3 / warp 0.8、counter・gate bands 5 / warp 0.2、rim と tint は弱め | 各値。warp は 0..1 の効き量で、実際の振れ幅はシェーダ側の定数 |
+| `postprocess` | **posterize(levels 5) → outline(0.5) → colorGrade(彩度 0.7 / 暗部を `#0E0B08` へ / gamma 0.95) → grain(0.4)**。dither 無効、tonemap 据え置き | 強度とパス枚数。実機が重ければ outline か grain を落とす |
 | `assets` | 空のまま（手描きテクスチャとメッシュの受け口だけ） | 実アセットが入る工程は別 |
 | `performance` | `frameBudgetMs: 33` / headless は 60 | 実機で測り直す |
+
+**画面を見て指示するときの当たり所**: 全体の明るさ＝`lighting.ambientIntensity`、影の深さ＝`palette.*Shadow`、
+沈み具合＝`postprocess.colorGrade.strength` と `shadowLift`、紙目＝`grain.strength`、
+線の量＝`outline.strength` と `threshold`。
 
 未確定は起動ログ・`GET /api/presentation/config`・HUD の「未確定」行に出る。
 HUD の render 行には `一次案` タグが出る。ニュートラル構成（全パス無効・パラメータ 0）も引き続き有効で、
@@ -261,9 +266,17 @@ HUD の render 行には `一次案` タグが出る。ニュートラル構成�
 ### フレーム予算の実測（headless / SwiftShader）
 
 `npm run smoke` が毎回測って `artifacts/frame-budget.json` に残す（**実機計測ではない**）。
-直近の値は greybox が約 28ms、stylized（4 パス）が約 80ms で、headless の予算 60ms を超えている。
+直近の値は greybox が約 30ms、stylized（4 パス）が約 100ms で、headless の予算 60ms を超えている。
 **超過は隠さない**: 画面のエラー帯・コンソール・HUD の budget 行に出て、smoke は実測値付きで警告を出す
 （ポスプロが掛かっている計測は advisory、素の経路は予算を守らせる）。パス枚数と強度の詰めは実機計測の段階で。
+
+### v2 で直したもの
+
+- 自前シェーダが linear のまま出力していて、画面がほぼ真っ黒だった。組み込み材質と違って
+  出力の色空間変換が入らないため、シェーダとポスプロの終端で sRGB に戻すようにした。
+- stylized の暗部の底が greybox（Lambert）より明るく、A/B の露出が揃っていなかったので係数を下げた。
+- パスに要るパラメータ（`posterize.levels` など）を **config 読み込み時に検証**するようにした。
+  以前はブラウザで実行時に落ちていた。
 
 ### 差し替えの実証
 

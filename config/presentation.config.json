@@ -1,31 +1,40 @@
 {
-  "$comment": "presentation 層。方向は確定（ウルの形・要素 ＋ Donwood の暗い質感）だが、値は【一次案・要調整】。正確な hex と強度は加藤さんが実参照から確定する。",
+  "$comment": "presentation 層 v2。方向は確定（ウルの形・要素 ＋ Donwood の暗い質感）。値は【一次案・要調整】で、ウールのイラストからの目視の当たり。eyedropper の厳密値ではない。",
   "version": "0",
   "declared_in": "world/world.config.json#presentation",
   "confirmed": false,
   "tuning": {
     "status": "first-pass",
     "owner": "kato",
-    "note": "方向（古代ウルの市場＋Donwood 系ディストレス）を翻訳した一次値。hex は eyedropper、強度は実機計測で差し替える。"
+    "note": "v2: 参照イラストからの目視の当たりで hex と実数まで入れた一次値。最終確定は実参照からの eyedropper、または画面を見ての「明るく／暗く」の指示で詰める。"
   },
   "mode": "stylized",
   "palette": {
-    "$comment": "【一次案・要調整】ウルの暖色（生成り・砂・黄土・レンガ褐色）を低彩度で暗く沈めた値。真昼の彩度は出さない。影は黒寄り。",
+    "$comment": "【一次案・要調整】base / shadow の対で持つ。shadow は面の陰側の寄せ先。指定のあった wall / floor 以外の *Shadow は base から導出した一次値。低彩度・暖色・暗部は黒寄り。",
     "confirmed": false,
     "colors": {
-      "sky": "#1a1611",
-      "fog": "#1e1811",
-      "floor": "#544737",
-      "wall": "#63503a",
-      "stallImport": "#806a52",
-      "stallExport": "#6b5942",
-      "counter": "#8f7a5c",
-      "highlight": "#cbb694",
-      "gateClosed": "#6b563c",
-      "gateOpen": "#86745a",
-      "lightSky": "#d9b483",
-      "lightGround": "#221a12",
-      "lightKey": "#e0bd8a",
+      "wallBase": "#8B7355",
+      "wallShadow": "#6B5842",
+      "floorBase": "#5A4C3A",
+      "floorShadow": "#403425",
+      "stallWood": "#4A3B2A",
+      "stallClothWarm": "#9C4A2E",
+      "stallClothCool": "#3E4A52",
+      "counterWood": "#4A3B2A",
+      "gateStone": "#6B5F4E",
+      "sky": "#1A1611",
+      "fog": "#0E0B08",
+      "ambient": "#2A2018",
+      "key": "#C8955A",
+      "highlight": "#C8955A",
+      "gateOpenMarker": "#8A7E6C",
+      "stallWoodShadow": "#2E241A",
+      "counterWoodShadow": "#2E241A",
+      "gateStoneShadow": "#453D31",
+      "stallClothWarmShadow": "#5F2C1C",
+      "stallClothCoolShadow": "#262E33",
+      "gateOpenMarkerShadow": "#57503F",
+      "highlightShadow": "#7A5A36",
       "labelBackground": "rgba(18,15,12,0.88)",
       "labelBorder": "#6a5a45",
       "labelBorderShock": "#b98f4a",
@@ -38,66 +47,70 @@
     }
   },
   "lighting": {
-    "$comment": "【一次案・要調整】真昼ではなく低い斜光／薄暮寄り。暗部を潰し気味（低キー）にして陰影を強く出す。",
+    "$comment": "【一次案・要調整】夕方寄りアンバーの低い斜光。ambient < key を保つ（低キー）。方位角は未指定のため現状維持の値。",
     "confirmed": false,
-    "ambientIntensity": 0.8,
+    "ambientIntensity": 0.85,
+    "ambientColorKey": "ambient",
     "keyIntensity": 1.15,
+    "keyColorKey": "key",
+    "keyElevationDeg": 15,
+    "keyAzimuthDeg": 40,
     "fogNear": 22,
     "fogFar": 110
   },
   "materials": {
-    "$comment": "【一次案・要調整】floor=土/敷石、wall=日干しレンガの塊、stall=木枠＋日除け布、counter/gate=木・石。量子化と揺らぎで手描きの崩れを出す。",
+    "$comment": "【一次案・要調整】bands は階調数、warp は手描きの崩れ（0..1 の効き量）、rim と tint（color-bleed）は弱め。",
     "confirmed": false,
     "slots": {
       "floor": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 5,
-          "rim": 0.05,
-          "warp": 0.02,
-          "tint": 0.06
+          "bands": 4,
+          "warp": 0.5,
+          "rim": 0.06,
+          "tint": 0.05
         }
       },
       "wall": {
         "shader": "stylized-surface",
         "params": {
           "bands": 4,
+          "warp": 0.3,
           "rim": 0.08,
-          "warp": 0.035,
-          "tint": 0.1
+          "tint": 0.06
         }
       },
       "stall": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 4,
-          "rim": 0.12,
-          "warp": 0.03,
+          "bands": 3,
+          "warp": 0.8,
+          "rim": 0.1,
           "tint": 0.08
         }
       },
       "counter": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 3,
-          "rim": 0.1,
-          "warp": 0.02,
-          "tint": 0.06
+          "bands": 5,
+          "warp": 0.2,
+          "rim": 0.08,
+          "tint": 0.05
         }
       },
       "gate": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 3,
-          "rim": 0.14,
-          "warp": 0.015,
+          "bands": 5,
+          "warp": 0.2,
+          "rim": 0.1,
           "tint": 0.05
         }
       }
     }
   },
   "postprocess": {
-    "$comment": "【一次案・要調整】Donwood 質感の芯。主軸は posterize（階調落とし）＋ outline（インク線）＋ grain（紙目）、colorGrade で暖色を沈める。dither は任意なので既定は無効。tonemap は既存のまま無効。順序はこの配列のとおり。",
+    "$comment": "【一次案・要調整】posterize → outline → colorGrade → grain の順。dither は無効、tonemap は据え置き。strength は 0..1 の効き量で、パスごとの内部スケールは shader 側にある。",
     "confirmed": false,
     "enabled": true,
     "appliesTo": [
@@ -115,15 +128,15 @@
       {
         "id": "posterize",
         "enabled": true,
-        "strength": 0.45,
+        "strength": 0.55,
         "params": {
-          "steps": 6
+          "levels": 5
         }
       },
       {
         "id": "outline",
         "enabled": true,
-        "strength": 0.4,
+        "strength": 0.5,
         "params": {
           "threshold": 0.14
         }
@@ -131,16 +144,20 @@
       {
         "id": "colorGrade",
         "enabled": true,
-        "strength": 0.25,
+        "strength": 0.8,
         "params": {
-          "shadowShift": 0.06,
-          "highlightShift": 0.02
+          "saturation": 0.7,
+          "gamma": 0.95,
+          "shadowLift": 0.35
+        },
+        "colorParams": {
+          "shadowColor": "#0E0B08"
         }
       },
       {
         "id": "grain",
         "enabled": true,
-        "strength": 0.06,
+        "strength": 0.4,
         "params": {
           "scale": 2.5,
           "speed": 0.15
@@ -163,7 +180,7 @@
     "meshes": {}
   },
   "performance": {
-    "$comment": "【一次案・要調整】パス枚数と強度はフレーム予算とのトレードオフ。実機計測は加藤さん段階。headless（SwiftShader）は実機より大幅に遅い。",
+    "$comment": "【一次案・要調整】4 パスは重い。実機計測で outline か grain を落とす候補。headless（SwiftShader）は実機より大幅に遅い。",
     "confirmed": false,
     "frameBudgetMs": 33,
     "headlessFrameBudgetMs": 60
