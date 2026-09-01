@@ -1,3 +1,4 @@
+import { unconfirmedPresentation } from '@na/shared';
 import { runCommissionAction } from './commission/actions.js';
 import { createHttpServer } from './http.js';
 import { createRuntime, printStartupLabels, resolveClientDist } from './runtime.js';
@@ -67,6 +68,15 @@ function main(): void {
           : '稼働前ゲート未達のため schedule では回さない',
         dryRun: 'npm run agent:dry-run で 1 サイクルのトークン量とコストを測る（LLM 呼び出し 0）',
         llm: '市場の動きは M1 の決定論。LLM は推論が要る判断だけに使う',
+      },
+    }),
+    presentationConfig: () => ({
+      config: runtime.renderConfig,
+      unconfirmed: unconfirmedPresentation(runtime.renderConfig),
+      notes: {
+        scope: '色・質感・パス構成は加藤さん確定待ち。ニュートラル既定（0 = 効果なし）で動かしている',
+        swap: 'config 差し替えだけで見た目が変わる（ソース修正なし）',
+        toggle: 'greybox ↔ stylized は残す。P キー、または ?render=stylized',
       },
     }),
     adapterStatus: () => ({

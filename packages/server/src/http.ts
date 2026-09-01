@@ -17,6 +17,7 @@ export interface HttpOptions {
   privacyStatus: () => unknown;
   agentStatus: () => unknown;
   adapterStatus: () => unknown;
+  presentationConfig: () => unknown;
   commissionBoard: () => unknown;
   commissionAction: (body: Record<string, unknown>) => Promise<unknown>;
   storefrontListing: () => unknown;
@@ -122,6 +123,11 @@ export function createHttpServer(options: HttpOptions) {
 
       case 'GET /api/agent/status':
         sendJson(res, 200, options.agentStatus());
+        return;
+
+      case 'GET /api/presentation/config':
+        // 見た目の設定はそのまま配る。サーバ側で値を解釈しない。
+        sendJson(res, 200, options.presentationConfig());
         return;
 
       case 'GET /api/adapters/status':

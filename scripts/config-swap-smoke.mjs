@@ -39,6 +39,21 @@ try {
   market.stalls.perCategory = 2;
   writeFileSync(marketPath, `${JSON.stringify(market, null, 2)}\n`);
 
+  // 5. 見た目も差し替える（モード・パス構成・強度・色）。ソースは触らない。
+  const presentationPath = join(tree, 'config/presentation.config.json');
+  const presentation = JSON.parse(readFileSync(presentationPath, 'utf8'));
+  presentation.mode = 'stylized';
+  presentation.palette.colors.floor = '#4a3f35';
+  presentation.palette.colors.wall = '#2b2622';
+  presentation.materials.slots.floor.params = { bands: 4, rim: 0.15, warp: 0.03, tint: 0.05 };
+  presentation.materials.slots.stall.params = { bands: 3, rim: 0.25, warp: 0.02, tint: 0.08 };
+  presentation.postprocess.passes = [
+    { id: 'posterize', enabled: true, strength: 0.6, params: { steps: 6 } },
+    { id: 'outline', enabled: true, strength: 0.5, params: { threshold: 0.15 } },
+    { id: 'grain', enabled: true, strength: 0.06, params: { scale: 3, speed: 0.2 } },
+  ];
+  writeFileSync(presentationPath, `${JSON.stringify(presentation, null, 2)}\n`);
+
   console.log(`[swap] 差し替えツリー: ${tree}`);
   const result = spawnSync(process.execPath, ['scripts/smoke.mjs'], {
     stdio: 'inherit',
@@ -46,12 +61,17 @@ try {
       ...process.env,
       NA_WORLD_CONFIG: worldPath,
       NA_SMOKE_PORT: process.env.NA_SMOKE_SWAP_PORT ?? '8802',
+      // 重いパス構成を意図的に入れるので、予算は advisory（実測値は必ず出す）。
+      NA_SMOKE_BUDGET_ADVISORY: '1',
     },
   });
   if (result.status !== 0) {
     console.error('[swap] 差し替えツリーで smoke が失敗した');
     process.exit(result.status ?? 1);
   }
+  // 差し替え後の画面を別名で残す（既定の greybox の画面は上書きしない）。
+  cpSync('artifacts/m2-greybox.png', 'artifacts/stylized-swap.png');
+  console.log('[swap] screenshot: artifacts/stylized-swap.png');
   console.log('[swap] config 差し替えだけで反映される（ソース修正なし）');
 } finally {
   rmSync(tree, { recursive: true, force: true });

@@ -21,6 +21,12 @@ const config = JSON.parse(readFileSync(configPath, 'utf8'));
 // room の定義も、world config と同じツリーから読む（config 差し替えの確認に使う）。
 const treeRoot = new URL('./', configPath.href.replace(/world\/[^/]+$/, ''));
 const roomsConfig = JSON.parse(readFileSync(new URL('config/rooms.config.json', treeRoot), 'utf8'));
+const presentationConfig = JSON.parse(readFileSync(new URL('config/presentation.config.json', treeRoot), 'utf8'));
+const passesFor = (mode) =>
+  presentationConfig.postprocess.enabled && presentationConfig.postprocess.appliesTo.includes(mode)
+    ? presentationConfig.postprocess.passes.filter((p) => p.enabled && p.strength > 0).map((p) => p.id)
+    : [];
+const expectedPasses = passesFor(presentationConfig.mode);
 const gatedRooms = roomsConfig.rooms.filter((room) => room.minStanding > 0);
 const expectedIds = [
   ...config.stall_categories.imports.map((c) => c.id),
@@ -33,6 +39,20 @@ const failures = [];
 const check = (ok, label, detail = '') => {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` — ${detail}` : ''}`);
   if (!ok) failures.push(label);
+};
+
+/**
+ * フレーム予算は環境依存（headless の SwiftShader は実機より大幅に遅い）。
+ * 既定では失敗として扱い、重いパス構成を意図的に入れる差し替え確認では advisory にする。
+ * どちらでも実測値は必ず出す（隠さない）。
+ */
+const budgetAdvisory = process.env.NA_SMOKE_BUDGET_ADVISORY === '1';
+const checkBudget = (ok, label, detail) => {
+  if (ok || !budgetAdvisory) {
+    check(ok, label, detail);
+    return;
+  }
+  console.log(`warn ${label} — ${detail}（advisory: 重いパス構成での計測）`);
 };
 
 const server = spawn(process.execPath, ['packages/server/dist/index.js'], {
@@ -72,12 +92,20 @@ try {
   });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const pageErrors = [];
+  const budgetNotices = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('console', (msg) => {
-    if (msg.type() === 'error') pageErrors.push(msg.text());
+    if (msg.type() !== 'error') return;
+    // 予算超過は専用の項目で扱う（ページエラーとは分ける）。
+    if (msg.text().includes('フレーム予算を超えている')) {
+      budgetNotices.push(msg.text());
+      return;
+    }
+    pageErrors.push(msg.text());
   });
 
-  await page.goto(BASE, { waitUntil: 'load' });
+  // headless の描画は実機より遅いので、予算も headless 用の値を使う。
+  await page.goto(`${BASE}/?headless=1`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__na_debug !== undefined, null, { timeout: 15000 });
 
   const debug = await page.evaluate(() => ({
@@ -155,7 +183,7 @@ try {
   const penetrated = Math.abs(walk.blockedAt.x) > Math.abs(walk.stallX) - 0.5;
   check(!penetrated, 'stall を通り抜けない', `x=${walk.blockedAt.x.toFixed(2)} vs stall x=${walk.stallX}`);
   check(walk.frameMs > 0, 'フレームが回っている', `${walk.frameMs.toFixed(1)}ms / ${walk.fps.toFixed(0)}fps`);
-  check(
+  checkBudget(
     walk.frameMs < FRAME_BUDGET_MS,
     `フレーム予算内（< ${FRAME_BUDGET_MS}ms, headless SwiftShader）`,
     `${walk.frameMs.toFixed(1)}ms`,
@@ -350,6 +378,66 @@ try {
     'wallet を rotate しても評判と門の状態が続く',
     `standing=${afterRotate.standing}`,
   );
+
+  // 見た目の層: config どおりのモードとパス構成で立ち上がる。
+  const renderState = await page.evaluate(() => ({
+    mode: window.__na_debug.renderMode(),
+    passes: window.__na_debug.postPasses(),
+    unconfirmed: window.__na_debug.unconfirmedPresentation(),
+  }));
+  check(
+    renderState.mode === presentationConfig.mode,
+    'レンダのモードは presentation config 由来',
+    `${renderState.mode}`,
+  );
+  check(
+    JSON.stringify(renderState.passes) === JSON.stringify(expectedPasses),
+    'ポスプロのパス構成は presentation config 由来',
+    renderState.passes.join(',') || 'なし',
+  );
+  check(renderState.unconfirmed.length > 0, '見た目は未確定のまま動いている', renderState.unconfirmed.join(', '));
+
+  // greybox ↔ stylized のトグル。両方の経路で描けること。
+  const measure = async (mode) => {
+    await page.evaluate((m) => window.__na_debug.setRenderMode(m), mode);
+    // 切り替え直後は平均が 0 に戻る。新しい平均が出るまで待つ。
+    await page.waitForFunction(() => window.__na_debug.frameStats().averageMs > 0, null, { timeout: 30000 });
+    return page.evaluate(() => ({
+      mode: window.__na_debug.renderMode(),
+      stats: window.__na_debug.frameStats(),
+    }));
+  };
+  const stylized = await measure('stylized');
+  check(stylized.mode === 'stylized', 'stylized 経路に切り替わる');
+  const stylizedPasses = await page.evaluate(() => window.__na_debug.postPasses());
+  check(
+    JSON.stringify(stylizedPasses) === JSON.stringify(passesFor('stylized')),
+    'stylized で掛かるパスは config の appliesTo どおり',
+    stylizedPasses.join(',') || 'なし',
+  );
+  checkBudget(
+    stylized.stats.averageMs > 0 && !stylized.stats.exceeded,
+    `stylized のフレーム予算内（< ${stylized.stats.budgetMs}ms, headless）`,
+    `${stylized.stats.averageMs.toFixed(1)}ms`,
+  );
+
+  const backToGreybox = await measure('greybox');
+  check(backToGreybox.mode === 'greybox', 'greybox 経路に戻せる（greybox は消さない）');
+  const greyboxPasses = await page.evaluate(() => window.__na_debug.postPasses());
+  check(
+    JSON.stringify(greyboxPasses) === JSON.stringify(passesFor('greybox')),
+    'greybox 経路は config どおり素のまま残る',
+    greyboxPasses.join(',') || 'なし',
+  );
+  checkBudget(
+    backToGreybox.stats.averageMs > 0 && !backToGreybox.stats.exceeded,
+    `greybox のフレーム予算内（< ${backToGreybox.stats.budgetMs}ms, headless）`,
+    `${backToGreybox.stats.averageMs.toFixed(1)}ms`,
+  );
+  if (budgetNotices.length > 0) {
+    console.log(`note 予算超過の通知（画面にも出ている）: ${budgetNotices.length} 件`);
+    for (const notice of budgetNotices) console.log(`     ${notice}`);
+  }
 
   check(
     (await page.evaluate(() => window.__na_debug.contextLost())) === false,

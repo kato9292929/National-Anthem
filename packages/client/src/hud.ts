@@ -17,6 +17,12 @@ export const PLACEHOLDER_HUD = {
 
 export interface HudHandles {
   update(input: {
+    presentation: {
+      mode: string;
+      passes: string[];
+      stats: { averageMs: number; budgetMs: number; exceeded: boolean };
+      unconfirmed: string[];
+    };
     world: WorldPayload;
     session: SessionPayload | null;
     board: CommissionBoardPayload | null;
@@ -53,7 +59,9 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
     <section class="panel" id="panel-stats">
       <div class="row"><span class="dim">fps</span><span id="stat-fps" class="num"></span></div>
       <div class="row"><span class="dim">frame</span><span id="stat-frame" class="num"></span></div>
-      <div class="row"><span class="dim">assets</span><span>greybox のみ</span></div>
+      <div class="row"><span class="dim">render</span><span id="stat-mode"></span></div>
+      <div class="row"><span class="dim">post</span><span id="stat-passes"></span></div>
+      <div class="row"><span class="dim">budget</span><span id="stat-budget"></span></div>
       <div class="row"><span class="dim">未確定</span><span id="stat-unconfirmed"></span></div>
     </section>
     <div id="crosshair"></div>
@@ -71,11 +79,17 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
   el('hud-inventory').textContent = `${PLACEHOLDER_HUD.inventorySlots}/${PLACEHOLDER_HUD.inventoryCapacity}`;
   el('hud-credits').textContent = String(PLACEHOLDER_HUD.credits);
   el('hud-agents').textContent = String(PLACEHOLDER_HUD.connectedAgents);
-  el('stat-unconfirmed').textContent =
-    world.unconfirmedNames.length > 0 ? `固有名 ${world.unconfirmedNames.length} 件 / presentation` : 'presentation';
+  el('stat-unconfirmed').textContent = '計測中';
 
   return {
-    update({ world: payload, session, board, market, focused, fps, frameMs, stale }) {
+    update({ presentation, world: payload, session, board, market, focused, fps, frameMs, stale }) {
+      el('stat-mode').textContent = `${presentation.mode}${presentation.mode === 'greybox' ? '' : ' (P で切替)'}`;
+      el('stat-passes').textContent = presentation.passes.length > 0 ? presentation.passes.join(',') : 'なし';
+      const stats = presentation.stats;
+      el('stat-budget').innerHTML =
+        stats.averageMs > 0
+          ? `<span class="${stats.exceeded ? 'down' : 'dim'}">${stats.averageMs.toFixed(1)}/${stats.budgetMs}ms</span>`
+          : `<span class="dim">計測中</span>`;
       el('stat-fps').textContent = fps.toFixed(0);
       el('stat-frame').textContent = `${frameMs.toFixed(1)}ms`;
 
@@ -94,6 +108,8 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
       el('focus-body').innerHTML = renderFocus(payload, market, focused);
       el('identity-body').innerHTML = renderIdentity(session);
       el('board-body').innerHTML = renderBoard(board);
+      el('stat-unconfirmed').textContent =
+        `固有名 ${payload.unconfirmedNames.length} / 見た目 ${presentation.unconfirmed.length}`;
     },
   };
 }

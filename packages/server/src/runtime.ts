@@ -2,12 +2,14 @@ import { resolve } from 'node:path';
 import {
   seedFrom,
   unconfirmedNames,
+  unconfirmedPresentation,
   type IdentityConfig,
   type RoomsConfig,
   type WorldConfig,
   type AgentConfig,
   type CommissionConfig,
   type MarketStructureConfig,
+  type PresentationConfig,
   type PrivacyConfig,
   type X402Config,
 } from '@na/shared';
@@ -16,6 +18,7 @@ import {
   loadCommissionConfig,
   loadIdentityConfig,
   loadMarketStructureConfig,
+  loadPresentationConfig,
   loadPrivacyConfig,
   loadRoomsConfig,
   loadWorldConfig,
@@ -42,6 +45,8 @@ export interface Runtime {
   sim: MarketSimulation;
   seedInput: string;
   marketStructure: MarketStructureConfig;
+  /** 見た目の設定。サーバは中身を読まず、そのまま配るだけ。 */
+  renderConfig: PresentationConfig;
   identityConfig: IdentityConfig;
   roomsConfig: RoomsConfig;
   identity: IdentityService;
@@ -73,6 +78,7 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   const { config, path } = loadWorldConfig(process.env);
   const seedInput = env.require('NA_MARKET_SEED');
   const marketStructure = loadMarketStructureConfig(process.env).value;
+  const renderConfig = loadPresentationConfig(process.env).value;
   const sim = new MarketSimulation({ config, seed: seedFrom(seedInput), structure: marketStructure });
 
   const identityConfig = loadIdentityConfig(process.env).value;
@@ -128,6 +134,7 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     sim,
     seedInput,
     marketStructure,
+    renderConfig,
     identityConfig,
     roomsConfig,
     identity,
@@ -153,7 +160,15 @@ export function printStartupLabels(runtime: Runtime): void {
   const pendingNames = unconfirmedNames(runtime.config);
   console.log(`[world] config: ${runtime.configPath}`);
   console.log(`[world] 未確定の固有名: ${pendingNames.length > 0 ? pendingNames.join(', ') : 'なし'}`);
-  console.log(`[world] presentation: 未着手（グレイボックスで描画）`);
+  console.log(
+    `[render] mode=${runtime.renderConfig.mode} / post=${runtime.renderConfig.postprocess.passes
+      .filter((p) => p.enabled && p.strength > 0)
+      .map((p) => p.id)
+      .join(',') || 'なし'}`,
+  );
+  console.log(
+    `[render] 未確定（仮値のまま動かす）: ${unconfirmedPresentation(runtime.renderConfig).join(', ') || 'なし'}`,
+  );
   console.log(`[market] seed: ${runtime.seedInput} -> ${runtime.sim.seed}`);
   console.log(`[market] 仮値: ${TUNING_PROVISIONAL_NOTE}`);
   console.log(

@@ -1,0 +1,165 @@
+{
+  "$comment": "presentation 層。色・質感・パス構成はすべて【仮値（ニュートラル既定）】。確定は加藤さん。world/world.config.json の presentation ブロックが範囲の宣言で、実体はここ。",
+  "version": "0",
+  "declared_in": "world/world.config.json#presentation",
+  "confirmed": false,
+  "mode": "greybox",
+  "palette": {
+    "$comment": "グレイボックスの無地。確定した配色ではない。",
+    "confirmed": false,
+    "colors": {
+      "sky": "#1b1c1e",
+      "fog": "#1b1c1e",
+      "floor": "#3a3b3d",
+      "wall": "#2e2f31",
+      "stallImport": "#6f7174",
+      "stallExport": "#54565a",
+      "counter": "#86888c",
+      "highlight": "#b9bcc0",
+      "gateClosed": "#7a6f5c",
+      "gateOpen": "#5c6f7a",
+      "lightSky": "#ffffff",
+      "lightGround": "#404040",
+      "lightKey": "#ffffff",
+      "labelBackground": "rgba(20,21,23,0.86)",
+      "labelBorder": "#6a6d72",
+      "labelBorderShock": "#d9c48a",
+      "labelBorderOpen": "#9fd39f",
+      "labelBorderClosed": "#a38f5c",
+      "labelTitle": "#e6e7e9",
+      "labelBody": "#b9bcc0",
+      "labelOpen": "#9fd39f",
+      "labelClosed": "#d9c48a"
+    }
+  },
+  "lighting": {
+    "confirmed": false,
+    "ambientIntensity": 1.15,
+    "keyIntensity": 0.55,
+    "fogNear": 18,
+    "fogFar": 120
+  },
+  "materials": {
+    "$comment": "要素種別ごとのスロット。stylized のときだけ shader が効く。params はすべてニュートラル既定（0 = 効果なし）。",
+    "confirmed": false,
+    "slots": {
+      "floor": {
+        "shader": "stylized-surface",
+        "params": {
+          "bands": 0,
+          "rim": 0,
+          "warp": 0,
+          "tint": 0
+        }
+      },
+      "wall": {
+        "shader": "stylized-surface",
+        "params": {
+          "bands": 0,
+          "rim": 0,
+          "warp": 0,
+          "tint": 0
+        }
+      },
+      "stall": {
+        "shader": "stylized-surface",
+        "params": {
+          "bands": 0,
+          "rim": 0,
+          "warp": 0,
+          "tint": 0
+        }
+      },
+      "counter": {
+        "shader": "stylized-surface",
+        "params": {
+          "bands": 0,
+          "rim": 0,
+          "warp": 0,
+          "tint": 0
+        }
+      },
+      "gate": {
+        "shader": "stylized-surface",
+        "params": {
+          "bands": 0,
+          "rim": 0,
+          "warp": 0,
+          "tint": 0
+        }
+      }
+    }
+  },
+  "postprocess": {
+    "$comment": "順序も on/off も強度もここで組み替える。既定はすべて無効（＝素の描画と同じ絵）。appliesTo でどのモードに掛けるかを決める（既定は stylized だけ）。",
+    "confirmed": false,
+    "enabled": true,
+    "appliesTo": [
+      "stylized"
+    ],
+    "passes": [
+      {
+        "id": "tonemap",
+        "enabled": false,
+        "strength": 0,
+        "params": {
+          "exposure": 1
+        }
+      },
+      {
+        "id": "posterize",
+        "enabled": false,
+        "strength": 0,
+        "params": {
+          "steps": 8
+        }
+      },
+      {
+        "id": "dither",
+        "enabled": false,
+        "strength": 0,
+        "params": {
+          "scale": 1
+        }
+      },
+      {
+        "id": "outline",
+        "enabled": false,
+        "strength": 0,
+        "params": {
+          "threshold": 0.2
+        }
+      },
+      {
+        "id": "grain",
+        "enabled": false,
+        "strength": 0,
+        "params": {
+          "scale": 1,
+          "speed": 0
+        }
+      },
+      {
+        "id": "colorGrade",
+        "enabled": false,
+        "strength": 0,
+        "params": {
+          "shadowShift": 0,
+          "highlightShift": 0
+        }
+      }
+    ]
+  },
+  "assets": {
+    "$comment": "後で手描きテクスチャやメッシュを入れるための受け口。今は空。生成ツールは呼ばない。",
+    "confirmed": false,
+    "textures": {},
+    "meshes": {}
+  },
+  "performance": {
+    "$comment": "【仮値】ポスプロ有効時のフレーム予算。超えたら画面とログに出す（隠さない）。",
+    "confirmed": false,
+    "frameBudgetMs": 33,
+    "headlessFrameBudgetMs": 60
+  }
+}

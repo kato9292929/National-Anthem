@@ -14,7 +14,10 @@ import { FirstPersonController } from './controller.js';
 import { GREYBOX } from './greybox.js';
 import { createHud } from './hud.js';
 import { buildLayout } from './layout.js';
-import { buildScene, drawStallLabel, setGateOpen, type StallObject } from './scene.js';
+import { buildScene, drawStallLabel, labelColors, setGateOpen, type LabelColors, type StallObject } from './scene.js';
+import { PresentationLayer } from './presentation/index.js';
+import { fetchPresentationConfig, initialMode, unconfirmedList } from './presentation/config.js';
+import { stallMaterial } from './presentation/materials.js';
 
 /**
  * M2: 歩けるグレイボックス・クライアント。
@@ -38,6 +41,11 @@ interface DebugHandle {
   fps: number;
   unconfirmedNames: string[];
   contextLost: () => boolean;
+  renderMode: () => string;
+  setRenderMode: (mode: 'greybox' | 'stylized') => void;
+  postPasses: () => string[];
+  frameStats: () => { averageMs: number; budgetMs: number; exceeded: boolean };
+  unconfirmedPresentation: () => string[];
   gates: () => { roomId: string; open: boolean; required: number; x: number; z: number }[];
   standing: () => number | null;
   stallPositions: { categoryId: string; x: number; z: number }[];
@@ -76,6 +84,10 @@ async function main(): Promise<void> {
     throw error;
   }
 
+  // 見た目は presentation config から差す。ソースに色や強度を持たない。
+  const presentation = await fetchPresentationConfig();
+  const colors = labelColors(presentation);
+
   // room（門）はサーバから来る。standing のしきい値も room 定義も config 由来。
   let session: SessionPayload | null = null;
   try {
@@ -89,7 +101,6 @@ async function main(): Promise<void> {
   const gateSpecs = session.rooms
     .filter((room) => room.gate.required > 0)
     .map((room) => ({ roomId: room.id, label_ja: room.label_ja, required: room.gate.required }));
-  const built = buildScene(layout, gateSpecs);
   const hud = createHud(hudRoot, world);
 
   // WebGL コンテキストが落ちたら黙って黒画面のままにしない。
@@ -106,6 +117,15 @@ async function main(): Promise<void> {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
+  const layer = new PresentationLayer({
+    config: presentation,
+    renderer,
+    mode: initialMode(presentation, window.location.search),
+    headless: new URLSearchParams(window.location.search).get('headless') === '1',
+    onBudgetExceeded: (message) => showError(`[performance] ${message}`),
+  });
+  const built = buildScene({ layout, gateSpecs, materials: layer.materials, presentation });
+
   const camera = new THREE.PerspectiveCamera(
     GREYBOX.camera.fov,
     window.innerWidth / window.innerHeight,
@@ -115,11 +135,19 @@ async function main(): Promise<void> {
 
   const resize = (): void => {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
+    layer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
   };
   resize();
   window.addEventListener('resize', resize);
+
+  // greybox ↔ stylized のトグル。greybox 経路は消さない（比較・デバッグ用）。
+  window.addEventListener('keydown', (event) => {
+    if (event.code !== 'KeyP') return;
+    const next = layer.mode === 'greybox' ? 'stylized' : 'greybox';
+    built.applyMaterials(layer.swapMode(next), focused?.slot.categoryId ?? null);
+  });
 
   const controller = new FirstPersonController({
     camera,
@@ -137,7 +165,7 @@ async function main(): Promise<void> {
     for (const gate of built.gates) {
       const room = next.rooms.find((r) => r.id === gate.roomId);
       if (!room) throw new Error(`サーバに無い room: ${gate.roomId}`);
-      setGateOpen(gate, room.gate.allowed, next.standing.score);
+      setGateOpen(gate, room.gate.allowed, next.standing.score, layer.materials, colors);
     }
   };
   applySession(session);
@@ -162,7 +190,7 @@ async function main(): Promise<void> {
 
   let market: MarketState | null = null;
   let lastMarketAt = 0;
-  for (const stall of built.stalls) drawStallLabel(stall, waitingLabel(stall));
+  for (const stall of built.stalls) drawStallLabel(stall, waitingLabel(stall), colors);
 
   pollMarketState(
     MARKET_POLL_MS,
@@ -171,7 +199,7 @@ async function main(): Promise<void> {
       lastMarketAt = performance.now();
       const box = document.querySelector<HTMLElement>('#error');
       if (box) box.hidden = true;
-      for (const stall of built.stalls) drawStallLabel(stall, stallLabel(stall, state));
+      for (const stall of built.stalls) drawStallLabel(stall, stallLabel(stall, state), colors);
     },
     (error) => {
       // 取得に失敗したら黙って前の値を使い続けない。画面に出す。
@@ -193,12 +221,14 @@ async function main(): Promise<void> {
     controller.update(dt);
     const nextFocused = controller.focusedStall();
     if (nextFocused !== focused) {
-      if (focused) focused.body.material.color.setHex(colorFor(focused));
-      if (nextFocused) nextFocused.body.material.color.setHex(GREYBOX.color.highlight);
+      if (focused) focused.body.material = stallMaterial(layer.materials, focused.slot.direction, false);
+      if (nextFocused) nextFocused.body.material = stallMaterial(layer.materials, nextFocused.slot.direction, true);
       focused = nextFocused;
     }
 
-    renderer.render(built.scene, camera);
+    const frameStart = performance.now();
+    layer.render(built.scene, camera, now / 1000, dt * 1000);
+    void frameStart;
 
     frameAccum += dt * 1000;
     frameCount += 1;
@@ -210,6 +240,12 @@ async function main(): Promise<void> {
     }
 
     hud.update({
+      presentation: {
+        mode: layer.mode,
+        passes: layer.passIds,
+        stats: layer.stats(),
+        unconfirmed: unconfirmedList(presentation),
+      },
       world,
       session,
       board,
@@ -239,6 +275,14 @@ async function main(): Promise<void> {
     },
     unconfirmedNames: world.unconfirmedNames,
     contextLost: () => contextLost,
+    renderMode: () => layer.mode,
+    setRenderMode: (mode) => {
+      const materials = layer.swapMode(mode);
+      built.applyMaterials(materials, focused?.slot.categoryId ?? null);
+    },
+    postPasses: () => layer.passIds,
+    frameStats: () => layer.stats(),
+    unconfirmedPresentation: () => unconfirmedList(presentation),
     gates: () =>
       built.gates.map((g) => ({
         roomId: g.roomId,
@@ -259,10 +303,6 @@ async function main(): Promise<void> {
     },
     focusedCategoryId: () => focused?.slot.categoryId ?? null,
   } as DebugHandle;
-}
-
-function colorFor(stall: StallObject): number {
-  return stall.slot.direction === 'import' ? GREYBOX.color.stallImport : GREYBOX.color.stallExport;
 }
 
 function waitingLabel(stall: StallObject): { title: string; price: string; stock: string; shock: boolean } {

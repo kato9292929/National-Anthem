@@ -1,6 +1,36 @@
 import * as THREE from 'three';
+import type { PresentationConfig } from '@na/shared';
 import { GREYBOX } from './greybox.js';
 import type { MarketLayout, StallSlot } from './layout.js';
+import { cssColor } from './presentation/config.js';
+import { stallMaterial, type MaterialSet } from './presentation/materials.js';
+
+/** 看板に描く色。presentation config から作る（ここに色を書かない）。 */
+export interface LabelColors {
+  background: string;
+  border: string;
+  borderShock: string;
+  borderOpen: string;
+  borderClosed: string;
+  title: string;
+  body: string;
+  open: string;
+  closed: string;
+}
+
+export function labelColors(config: PresentationConfig): LabelColors {
+  return {
+    background: cssColor(config, 'labelBackground'),
+    border: cssColor(config, 'labelBorder'),
+    borderShock: cssColor(config, 'labelBorderShock'),
+    borderOpen: cssColor(config, 'labelBorderOpen'),
+    borderClosed: cssColor(config, 'labelBorderClosed'),
+    title: cssColor(config, 'labelTitle'),
+    body: cssColor(config, 'labelBody'),
+    open: cssColor(config, 'labelOpen'),
+    closed: cssColor(config, 'labelClosed'),
+  };
+}
 
 /**
  * グレイボックスの市場空間。無地の床・壁・箱だけ。
@@ -10,7 +40,8 @@ import type { MarketLayout, StallSlot } from './layout.js';
 export interface StallObject {
   slot: StallSlot;
   group: THREE.Group;
-  body: THREE.Mesh<THREE.BoxGeometry, THREE.MeshLambertMaterial>;
+  body: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
+  counter: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
   label: THREE.Sprite;
   labelCanvas: HTMLCanvasElement;
   labelTexture: THREE.CanvasTexture;
@@ -23,7 +54,7 @@ export interface GateObject {
   roomId: string;
   label_ja: string;
   required: number;
-  door: THREE.Mesh<THREE.BoxGeometry, THREE.MeshLambertMaterial>;
+  door: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
   label: THREE.Sprite;
   labelCanvas: HTMLCanvasElement;
   labelTexture: THREE.CanvasTexture;
@@ -42,6 +73,8 @@ export interface BuiltScene {
   gates: GateObject[];
   colliders: Collider[];
   bounds: { halfWidth: number; halfDepth: number };
+  /** モードを切り替えたときに、同じ形へマテリアルだけ差し直す。 */
+  applyMaterials(materials: MaterialSet, focusedStallId: string | null): void;
 }
 
 /** 門が要る room（standing のしきい値がある room）だけを門にする。 */
@@ -51,48 +84,68 @@ export interface GateSpec {
   required: number;
 }
 
-export function buildScene(layout: MarketLayout, gateSpecs: GateSpec[] = []): BuiltScene {
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(GREYBOX.color.sky);
-  scene.fog = new THREE.Fog(GREYBOX.color.fog, GREYBOX.fog.near, GREYBOX.fog.far);
+export interface BuildSceneInput {
+  layout: MarketLayout;
+  gateSpecs?: GateSpec[];
+  materials: MaterialSet;
+  presentation: PresentationConfig;
+}
 
-  scene.add(new THREE.HemisphereLight(GREYBOX.light.sky, GREYBOX.light.ground, GREYBOX.light.ambientIntensity));
-  const key = new THREE.DirectionalLight(GREYBOX.light.keyColor, GREYBOX.light.keyIntensity);
+export function buildScene(input: BuildSceneInput): BuiltScene {
+  const { layout, materials, presentation } = input;
+  const gateSpecs = input.gateSpecs ?? [];
+  const colors = labelColors(presentation);
+
+  const scene = new THREE.Scene();
+  scene.background = colorOf(presentation, 'sky');
+  scene.fog = new THREE.Fog(
+    colorOf(presentation, 'fog').getHex(),
+    presentation.lighting.fogNear,
+    presentation.lighting.fogFar,
+  );
+
+  scene.add(
+    new THREE.HemisphereLight(
+      colorOf(presentation, 'lightSky'),
+      colorOf(presentation, 'lightGround'),
+      presentation.lighting.ambientIntensity,
+    ),
+  );
+  const key = new THREE.DirectionalLight(colorOf(presentation, 'lightKey'), presentation.lighting.keyIntensity);
   key.position.set(6, 14, 8);
   scene.add(key);
 
   const width = layout.halfWidth * 2;
   const depth = layout.halfDepth * 2;
 
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(width, depth),
-    new THREE.MeshLambertMaterial({ color: GREYBOX.color.floor }),
-  );
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), materials.floor);
+  const walls: THREE.Mesh[] = [];
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  const wallMaterial = new THREE.MeshLambertMaterial({ color: GREYBOX.color.wall });
+  const wallMaterial = materials.wall;
   const { wallHeight: h, wallThickness: t } = GREYBOX.space;
-  const walls: [number, number, number, number, number][] = [
+  const wallSpecs: [number, number, number, number, number][] = [
     [width + t, h, t, 0, -layout.halfDepth],
     [width + t, h, t, 0, layout.halfDepth],
     [t, h, depth + t, -layout.halfWidth, 0],
     [t, h, depth + t, layout.halfWidth, 0],
   ];
-  for (const [w, hh, d, x, z] of walls) {
+  for (const [w, hh, d, x, z] of wallSpecs) {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), wallMaterial);
     wall.position.set(x, hh / 2, z);
     scene.add(wall);
+    walls.push(wall);
   }
 
-  const stalls = layout.slots.map((slot) => buildStall(slot));
+  const stalls = layout.slots.map((slot) => buildStall(slot, materials, colors));
   for (const stall of stalls) {
     scene.add(stall.group);
     // 看板はワールド座標に置く（group は回転しているので入れ子にしない）。
     scene.add(stall.label);
   }
 
-  const { gates, partitions } = buildPartition(scene, layout, gateSpecs, wallMaterial);
+  const { gates, partitions, partitionMeshes } = buildPartition(scene, layout, gateSpecs, wallMaterial, materials, colors);
 
   const colliders: Collider[] = [
     ...stalls.map((stall) => ({ bounds: stall.bounds, isSolid: () => true })),
@@ -106,6 +159,15 @@ export function buildScene(layout: MarketLayout, gateSpecs: GateSpec[] = []): Bu
     gates,
     colliders,
     bounds: { halfWidth: layout.halfWidth, halfDepth: layout.halfDepth },
+    applyMaterials: (next, focusedStallId) => {
+      floor.material = next.floor;
+      for (const wall of [...walls, ...partitionMeshes]) wall.material = next.wall;
+      for (const stall of stalls) {
+        stall.body.material = stallMaterial(next, stall.slot.direction, stall.slot.categoryId === focusedStallId);
+        stall.counter.material = next.counter;
+      }
+      for (const gate of gates) gate.door.material = gate.open ? next.gateOpen : next.gateClosed;
+    },
   };
 }
 
@@ -117,11 +179,18 @@ function buildPartition(
   scene: THREE.Scene,
   layout: MarketLayout,
   specs: GateSpec[],
-  wallMaterial: THREE.MeshLambertMaterial,
-): { gates: GateObject[]; partitions: { minX: number; maxX: number; minZ: number; maxZ: number }[] } {
+  wallMaterial: THREE.Material,
+  materials: MaterialSet,
+  colors: LabelColors,
+): {
+  gates: GateObject[];
+  partitions: { minX: number; maxX: number; minZ: number; maxZ: number }[];
+  partitionMeshes: THREE.Mesh[];
+} {
   const gates: GateObject[] = [];
   const partitions: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
-  if (specs.length === 0) return { gates, partitions };
+  const partitionMeshes: THREE.Mesh[] = [];
+  if (specs.length === 0) return { gates, partitions, partitionMeshes };
 
   const g = GREYBOX.gate;
   const z = -layout.halfDepth + g.partitionOffsetZ;
@@ -148,6 +217,7 @@ function buildPartition(
     );
     mesh.position.set(from + segmentWidth / 2, GREYBOX.space.wallHeight / 2, z);
     scene.add(mesh);
+    partitionMeshes.push(mesh);
     partitions.push({
       minX: from,
       maxX: to,
@@ -157,10 +227,7 @@ function buildPartition(
   }
 
   for (const opening of openings) {
-    const door = new THREE.Mesh(
-      new THREE.BoxGeometry(g.doorWidth, g.doorHeight, g.thickness),
-      new THREE.MeshLambertMaterial({ color: g.colorClosed }),
-    );
+    const door = new THREE.Mesh(new THREE.BoxGeometry(g.doorWidth, g.doorHeight, g.thickness), materials.gateClosed);
     door.position.set(opening.x, g.doorHeight / 2, z);
     scene.add(door);
 
@@ -191,59 +258,65 @@ function buildPartition(
     });
   }
 
-  return { gates, partitions };
+  return { gates, partitions, partitionMeshes };
 }
 
 /** 門の開閉を反映する。開いた門は当たり判定も外れる。 */
-export function setGateOpen(gate: GateObject, open: boolean, standing: number): void {
+export function setGateOpen(
+  gate: GateObject,
+  open: boolean,
+  standing: number,
+  materials: MaterialSet,
+  colors: LabelColors,
+): void {
   gate.open = open;
   gate.door.visible = !open;
-  gate.door.material.color.setHex(open ? GREYBOX.gate.colorOpenMarker : GREYBOX.gate.colorClosed);
-  drawGateLabel(gate, standing);
+  gate.door.material = open ? materials.gateOpen : materials.gateClosed;
+  drawGateLabel(gate, standing, colors);
 }
 
-export function drawGateLabel(gate: GateObject, standing: number): void {
+export function drawGateLabel(gate: GateObject, standing: number, colors: LabelColors): void {
   const ctx = gate.labelCanvas.getContext('2d');
   if (!ctx) throw new Error('2d コンテキストを取得できない');
   const { width, height } = gate.labelCanvas;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = GREYBOX.label.background;
+  ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = gate.open ? GREYBOX.label.borderOpen : GREYBOX.label.borderClosed;
+  ctx.strokeStyle = gate.open ? colors.borderOpen : colors.borderClosed;
   ctx.lineWidth = 6;
   ctx.strokeRect(3, 3, width - 6, height - 6);
   ctx.textAlign = 'center';
-  ctx.fillStyle = GREYBOX.label.title;
+  ctx.fillStyle = colors.title;
   fitFont(ctx, gate.label_ja, width - 48, 58, 'system-ui, sans-serif', 600);
   ctx.fillText(gate.label_ja, width / 2, 88);
   ctx.font = '44px ui-monospace, monospace';
-  ctx.fillStyle = gate.open ? GREYBOX.label.open : GREYBOX.label.closed;
+  ctx.fillStyle = gate.open ? colors.open : colors.closed;
   ctx.fillText(gate.open ? '開' : '閉', width / 2, 150);
   ctx.font = '36px ui-monospace, monospace';
-  ctx.fillStyle = GREYBOX.label.body;
+  ctx.fillStyle = colors.body;
   ctx.fillText(`standing ${standing} / ${gate.required}`, width / 2, 206);
   gate.labelTexture.needsUpdate = true;
 }
 
-function buildStall(slot: StallSlot): StallObject {
+function colorOf(config: PresentationConfig, key: string): THREE.Color {
+  return new THREE.Color(cssColor(config, key));
+}
+
+function buildStall(slot: StallSlot, materials: MaterialSet, colors: LabelColors): StallObject {
   const { width, depth, height, counterHeight, counterOverhang, labelHeight } = GREYBOX.stall;
   const group = new THREE.Group();
   group.position.set(slot.x, 0, slot.z);
   group.rotation.y = slot.rotationY;
 
-  const bodyColor = slot.direction === 'import' ? GREYBOX.color.stallImport : GREYBOX.color.stallExport;
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(width, height, depth),
-    new THREE.MeshLambertMaterial({ color: bodyColor }),
-  );
+    slot.direction === 'import' ? materials.stallImport : materials.stallExport,
+  ) as THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
   body.position.y = height / 2;
   group.add(body);
 
   // 通路側のカウンター。stall の前に立てることを形で示すだけの箱。
-  const counter = new THREE.Mesh(
-    new THREE.BoxGeometry(width, 0.16, counterOverhang),
-    new THREE.MeshLambertMaterial({ color: GREYBOX.color.counter }),
-  );
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(width, 0.16, counterOverhang), materials.counter);
   counter.position.set(0, counterHeight, depth / 2 + counterOverhang / 2);
   group.add(counter);
 
@@ -264,6 +337,7 @@ function buildStall(slot: StallSlot): StallObject {
     slot,
     group,
     body,
+    counter,
     label,
     labelCanvas,
     labelTexture,
@@ -280,24 +354,25 @@ function buildStall(slot: StallSlot): StallObject {
 export function drawStallLabel(
   stall: StallObject,
   lines: { title: string; price: string; stock: string; shock: boolean },
+  colors: LabelColors,
 ): void {
   const ctx = stall.labelCanvas.getContext('2d');
   if (!ctx) throw new Error('2d コンテキストを取得できない');
   const { width, height } = stall.labelCanvas;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = GREYBOX.label.background;
+  ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = lines.shock ? GREYBOX.label.borderShock : GREYBOX.label.border;
+  ctx.strokeStyle = lines.shock ? colors.borderShock : colors.border;
   ctx.lineWidth = 6;
   ctx.strokeRect(3, 3, width - 6, height - 6);
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = GREYBOX.label.title;
+  ctx.fillStyle = colors.title;
   // 長いカテゴリ名でも切れないよう、幅に収まるまで縮める（config 由来なので長さは可変）。
   fitFont(ctx, lines.title, width - 48, 62, 'system-ui, sans-serif', 600);
   ctx.fillText(lines.title, width / 2, 92);
   ctx.font = '48px ui-monospace, monospace';
-  ctx.fillStyle = GREYBOX.label.body;
+  ctx.fillStyle = colors.body;
   ctx.fillText(lines.price, width / 2, 160);
   ctx.fillText(lines.stock, width / 2, 214);
   stall.labelTexture.needsUpdate = true;

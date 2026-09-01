@@ -9,7 +9,8 @@
 | `packages/shared` | 型・world config ローダ・命名解決・シード付き乱数。サーバとクライアントの契約 |
 | `packages/server` | 市場シム（サーバ権威・決定論）と HTTP API |
 | `packages/client` | WebGL 一人称クライアント。グレイボックスの市場空間と HUD |
-| `config/` | world 以外の設定（identity・room・以降のマイルストーン分）。ソースにリテラルを書かない |
+| `config/` | world 以外の設定（identity・room・市場構造・x402・privacy・agent・commission・presentation）。ソースにリテラルを書かない |
+| `packages/client/src/presentation/` | 見た目の受け口（マテリアルのスロット・シェーダ・ポスプロ pipeline）。色や強度は config から差す |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
 | `docs/commission-flow-options.md` | commission_flow の選択肢（設計のみ・未確定。実装はしていない） |
 | `docs/world-spec-v0.md` | 世界設定スペック v0（正典）。差別化指示書 §3「世界設定と固有名」と「経済の重心」の確定分 |
@@ -36,6 +37,7 @@ npm test                  # サーバのテスト（config / env / 市場シム 
 npm run sim -- --ticks 200 --every 40 --shock-at 60   # ヘッドレスで市場を回す
 npm run dev:server        # http://localhost:8787
 npm run dev:client        # http://localhost:5173（/api はサーバへプロキシ）
+                          #   P キーで greybox ↔ stylized、?render=stylized で起動時から stylized
 npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し artifacts/ に画面を残す
 npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
 npm run agent:dry-run     # M6 の dry-run。1 サイクルのトークン量とコストを出す（LLM 呼び出し 0）
@@ -59,6 +61,7 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `POST /api/commission/action` | 委託の操作（open / propose / agree / fund / leg / settle / refund / dispute / resolve） |
 | `GET /api/storefront/listing` | 物販（副モジュール）の品揃え。価格・在庫は M1 の市場状態 |
 | `POST /api/storefront/buy` | 物販の購入 |
+| `GET /api/presentation/config` | 見た目の設定（そのまま配るだけ。サーバは中身を解釈しない） |
 | `GET /api/adapters/status` | 外部接続の口（facilitator / MXE / ERC-8004 / DCW / チェーン）の状態。すべて未検証 |
 | `GET /api/agent/status` | モデル・キャッシュ・tick・予算・稼働前ゲートの判定（秘密は出さない） |
 | `GET /api/privacy/status` | Gateway の状態・記録方針・claim の線（秘密は出さない） |
@@ -207,6 +210,48 @@ principal が委託を出す → 代理エージェントが各レグを実行�
   しきい値を変え、1 カテゴリの stall 数を変えた**別 config ツリー**で同じ smoke を通す。
   ソース修正ゼロで、stall 数・門の数としきい値・市場名の表示がすべて追随する。
 
+## 見た目の受け口（presentation 層）
+
+見た目の芯は three の自前シェーダ＋ポストプロセスで出す。**この段階で作ったのは受け口と pipeline の箱だけで、
+色・質感・パラメータは決めていない**（加藤さん確定待ち）。生成ツールには一切繋いでいない。
+
+### 構成
+
+| 層 | 中身 | 差し替え単位 |
+| --- | --- | --- |
+| マテリアルのスロット | `floor` / `wall` / `stall` / `counter` / `gate` | 要素種別ごと。個別のオブジェクトを名指ししない |
+| シェーダ | `stylized-surface`（階調の量子化・リム・揺らぎ・色被り） | パラメータはすべて config。既定は 0 ＝効果なし |
+| ポスプロ | `tonemap` / `posterize` / `dither` / `outline` / `grain` / `colorGrade` | **順序・on/off・強度を config で組み替える**。1 本も有効でなければシーンを直接描く |
+| 色・照明 | `palette` / `lighting` | 色の値はソースに 1 つも無い（テストで固定） |
+| アセット | `assets.textures` / `assets.meshes` | 空の受け口。今は greybox ＋シェーダのみ |
+
+`config/presentation.config.json` が唯一の入口。`world/world.config.json` の `presentation` ブロックは
+「範囲の宣言」のまま据え置き、実体はこちらにある（`declared_in` で相互参照）。
+
+### greybox は消さない
+
+`mode: "greybox"` が既定。`P` キーまたは `?render=stylized` で切り替わる。
+ポスプロを**どのモードに掛けるか**は `postprocess.appliesTo`（既定は `["stylized"]`）で決めるので、
+greybox 経路は素のまま残り、A/B 比較ができる。
+
+### 性能ガード
+
+`performance.frameBudgetMs`（headless は `headlessFrameBudgetMs`）を超えたら、
+**画面のエラー帯とコンソールの両方に出す**。HUD の `budget` 行にも常時出る。
+smoke は greybox と stylized の両方を計測する（この環境の SwiftShader での実測値は README の数字ではなく毎回の出力を見る）。
+
+### 未確定（すべて仮値・ニュートラル既定）
+
+`palette` / `lighting` / `materials` / `postprocess` / `assets` / `performance` の 6 ブロックが `confirmed: false`。
+起動ログと `GET /api/presentation/config` と HUD の「未確定」行に出る。
+既定値はすべてニュートラル（パスは無効、シェーダのパラメータは 0）なので、**確定前でも素の greybox と同じ絵で動く**。
+
+### 差し替えの実証
+
+`npm run smoke:swap` が、固有名・カテゴリ・room に加えて**見た目も差し替えた別 config ツリー**で同じ smoke を通す
+（`mode: stylized`、posterize + outline + grain、床と壁の色、マテリアルのパラメータ）。
+ソース修正ゼロで、モード・パス構成・色・強度が反映される。画面は `artifacts/stylized-swap.png` に残る。
+
 ## 実装するときの決まり
 
 - 固有名（市場名・地区名・NPC・stall）はソースにリテラルで書かず、`world/world.config.json` から引く。
@@ -224,7 +269,8 @@ principal が委託を出す → 代理エージェントが各レグを実行�
 | --- | --- | --- |
 | `packages/server/src/market/tuning.ts` | 市場の数値（基準価格・在庫・補充・消費・弾力性・ショック確率）はすべて仮値 | v0 の経済仕様が確定したら、このファイルの差し替えで済む |
 | `packages/server/src/index.ts` の `TICK_INTERVAL_MS` | tick の実時間間隔（1000ms）は仮値 | 同上 |
-| `packages/client/src/greybox.ts` | グレイボックスの色・寸法・移動速度。確定した見た目ではない | ビジュアル確定時。この層を差し替える／上に重ねる |
+| `config/presentation.config.json` | 色・照明・マテリアルのパラメータ・ポスプロの構成・フレーム予算。6 ブロックすべて `confirmed: false` のニュートラル既定 | 加藤さん確定時。config 差し替えのみ |
+| `packages/client/src/greybox.ts` | グレイボックスの**寸法と配置**（色は presentation config に移した） | レイアウト確定時 |
 | `packages/client/src/hud.ts` の `PLACEHOLDER_HUD` | inventory / credits / 接続エージェント数はゼロ固定のプレースホルダ（画面にも「仮値」と出る） | M3（identity/wallet）以降 |
 | `scripts/smoke.mjs` の `FRAME_BUDGET_MS` | ヘッドレス（SwiftShader）向けの緩い予算 50ms | 対象デバイスが決まったら実機基準へ |
 | `config/x402.config.json` の `base` / `evm-secondary` レール | network / asset / payTo が未指定なので `TBD`・`confirmed:false`。使おうとすると落ちる（推測で埋めない） | 値が確定したら config 差し替え |

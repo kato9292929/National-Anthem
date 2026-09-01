@@ -7,6 +7,7 @@ import { validateWorldConfig } from './validate.js';
 import { validateAgentConfig, type AgentConfig } from './agent.types.js';
 import { validateCommissionConfig, type CommissionConfig } from './commission.types.js';
 import { validateMarketStructureConfig, type MarketStructureConfig } from './market.config.types.js';
+import { validatePresentationConfig, type PresentationConfig } from './presentation.types.js';
 import { validatePrivacyConfig, type PrivacyConfig } from './privacy.types.js';
 import { validateX402Config, type X402Config } from './x402.types.js';
 import type { WorldConfig } from './world-config.types.js';
@@ -126,4 +127,11 @@ export function loadMarketStructureConfig(env: NodeJS.ProcessEnv = process.env):
   path: string;
 } {
   return loadJsonConfig('config/market.config.json', validateMarketStructureConfig, env);
+}
+
+export function loadPresentationConfig(env: NodeJS.ProcessEnv = process.env): {
+  value: PresentationConfig;
+  path: string;
+} {
+  return loadJsonConfig('config/presentation.config.json', validatePresentationConfig, env);
 }

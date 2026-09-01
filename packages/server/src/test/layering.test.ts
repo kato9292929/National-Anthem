@@ -45,12 +45,42 @@ test('presentation.* をロジックから読んでいない', () => {
   assert.ok(shared.includes('presentation'), '検証は presentation ブロックの存在を見る');
 });
 
-test('グレイボックスの見た目の値は greybox.ts だけに置く', () => {
-  const files = sourceFiles(join(repoRoot, 'packages/client/src')).filter((f) => !f.endsWith('greybox.ts'));
+test('色の値はソースに 1 つも無い（presentation config から差す）', () => {
+  const files = sourceFiles(join(repoRoot, 'packages/client/src'));
   for (const file of files) {
     const text = stripComments(readFileSync(file, 'utf8'));
     const colors = text.match(/#[0-9a-fA-F]{6}\b|rgba?\(|0x[0-9a-fA-F]{6}\b/g) ?? [];
     assert.deepEqual(colors, [], `${file} に色の値が散っている: ${colors.join(', ')}`);
+  }
+  // greybox.ts に残るのは寸法だけ。
+  const greybox = readFileSync(join(repoRoot, 'packages/client/src/greybox.ts'), 'utf8');
+  assert.ok(!/color|Color/.test(stripComments(greybox)), 'greybox.ts に色が残っている');
+});
+
+test('見た目の値をサーバ側のロジックに漏らしていない', () => {
+  const files = sourceFiles(join(repoRoot, 'packages/server/src')).filter((f) => !f.includes('/test/'));
+  for (const file of files) {
+    const text = stripComments(readFileSync(file, 'utf8'));
+    const colors = text.match(/#[0-9a-fA-F]{6}\b|rgba?\(/g) ?? [];
+    assert.deepEqual(colors, [], `${file} に色の値がある: ${colors.join(', ')}`);
+  }
+  // サーバは presentation config を配るだけで、中身を解釈しない。
+  const logicDirs = ['market', 'identity', 'commission', 'x402', 'privacy', 'agent', 'adapters', 'store'];
+  for (const dir of logicDirs) {
+    for (const file of sourceFiles(join(repoRoot, 'packages/server/src', dir))) {
+      const text = stripComments(readFileSync(file, 'utf8'));
+      assert.ok(!/presentation|palette|postprocess|shader/i.test(text), `${file} が見た目を参照している`);
+    }
+  }
+});
+
+test('シェーダとパスにマジックナンバーの色を置いていない', () => {
+  const files = sourceFiles(join(repoRoot, 'packages/client/src/presentation'));
+  assert.ok(files.length >= 5, 'presentation 層のファイルが見つからない');
+  for (const file of files) {
+    const text = stripComments(readFileSync(file, 'utf8'));
+    const colors = text.match(/#[0-9a-fA-F]{6}\b|0x[0-9a-fA-F]{6}\b/g) ?? [];
+    assert.deepEqual(colors, [], `${file} に色の値がある: ${colors.join(', ')}`);
   }
 });
 
