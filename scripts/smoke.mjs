@@ -7,7 +7,7 @@
  * 失敗したら非ゼロで落ちる（黙って通さない）。
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 
@@ -46,14 +46,18 @@ const check = (ok, label, detail = '') => {
  * 既定では失敗として扱い、重いパス構成を意図的に入れる差し替え確認では advisory にする。
  * どちらでも実測値は必ず出す（隠さない）。
  */
-const budgetAdvisory = process.env.NA_SMOKE_BUDGET_ADVISORY === '1';
-const checkBudget = (ok, label, detail) => {
-  if (ok || !budgetAdvisory) {
+const budgetAdvisoryEnv = process.env.NA_SMOKE_BUDGET_ADVISORY === '1';
+/** ポスプロが掛かっている計測は advisory（実機計測は加藤さん段階）。素の経路は予算を守らせる。 */
+const checkBudget = (ok, label, detail, passCount = 0) => {
+  if (ok || (!budgetAdvisoryEnv && passCount === 0)) {
     check(ok, label, detail);
     return;
   }
-  console.log(`warn ${label} — ${detail}（advisory: 重いパス構成での計測）`);
+  console.log(`warn ${label} — ${detail}（advisory: ポスプロ ${passCount} 枚の計測。実機計測は別途）`);
 };
+
+/** 計測値は必ず残す。 */
+const measurements = [];
 
 const server = spawn(process.execPath, ['packages/server/dist/index.js'], {
   env: {
@@ -187,7 +191,15 @@ try {
     walk.frameMs < FRAME_BUDGET_MS,
     `フレーム予算内（< ${FRAME_BUDGET_MS}ms, headless SwiftShader）`,
     `${walk.frameMs.toFixed(1)}ms`,
+    expectedPasses.length,
   );
+  measurements.push({
+    label: 'walk',
+    mode: presentationConfig.mode,
+    passes: expectedPasses,
+    averageMs: Number(walk.frameMs.toFixed(2)),
+    budgetMs: FRAME_BUDGET_MS,
+  });
 
   check(pageErrors.length === 0, 'ページエラーが無い', pageErrors.join(' | '));
 
@@ -201,8 +213,9 @@ try {
   await page.evaluate(() => window.__na_debug.moveTo(0, 11));
   await sleep(500);
   mkdirSync('artifacts', { recursive: true });
-  await page.screenshot({ path: 'artifacts/m2-greybox.png' });
-  console.log('screenshot: artifacts/m2-greybox.png');
+  const shotPath = process.env.NA_SMOKE_SHOT ?? 'artifacts/render-current.png';
+  await page.screenshot({ path: shotPath });
+  console.log(`screenshot: ${shotPath}（mode=${presentationConfig.mode}）`);
 
   // M7: commission board の一周（開設 → 両者合意 → escrow → レグ → 封印精算 → standing）。
   const post = async (body) => {
@@ -419,7 +432,15 @@ try {
     stylized.stats.averageMs > 0 && !stylized.stats.exceeded,
     `stylized のフレーム予算内（< ${stylized.stats.budgetMs}ms, headless）`,
     `${stylized.stats.averageMs.toFixed(1)}ms`,
+    stylizedPasses.length,
   );
+  measurements.push({
+    label: 'stylized',
+    mode: 'stylized',
+    passes: stylizedPasses,
+    averageMs: Number(stylized.stats.averageMs.toFixed(2)),
+    budgetMs: stylized.stats.budgetMs,
+  });
 
   const backToGreybox = await measure('greybox');
   check(backToGreybox.mode === 'greybox', 'greybox 経路に戻せる（greybox は消さない）');
@@ -433,7 +454,20 @@ try {
     backToGreybox.stats.averageMs > 0 && !backToGreybox.stats.exceeded,
     `greybox のフレーム予算内（< ${backToGreybox.stats.budgetMs}ms, headless）`,
     `${backToGreybox.stats.averageMs.toFixed(1)}ms`,
+    greyboxPasses.length,
   );
+  // トグルの A/B を画像でも残す（stylized と同じ立ち位置から撮る）。
+  await page.evaluate(() => window.__na_debug.moveTo(0, 11));
+  await sleep(500);
+  await page.screenshot({ path: process.env.NA_SMOKE_GREYBOX_SHOT ?? 'artifacts/greybox-compare.png' });
+
+  measurements.push({
+    label: 'greybox',
+    mode: 'greybox',
+    passes: greyboxPasses,
+    averageMs: Number(backToGreybox.stats.averageMs.toFixed(2)),
+    budgetMs: backToGreybox.stats.budgetMs,
+  });
   if (budgetNotices.length > 0) {
     console.log(`note 予算超過の通知（画面にも出ている）: ${budgetNotices.length} 件`);
     for (const notice of budgetNotices) console.log(`     ${notice}`);
@@ -443,6 +477,28 @@ try {
     (await page.evaluate(() => window.__na_debug.contextLost())) === false,
     'WebGL コンテキストが生きている',
   );
+
+  // フレーム予算の実測を残す（headless の SwiftShader での値。実機とは別物）。
+  mkdirSync('artifacts', { recursive: true });
+  const budgetPath = process.env.NA_SMOKE_BUDGET_OUT ?? 'artifacts/frame-budget.json';
+  writeFileSync(
+    budgetPath,
+    `${JSON.stringify(
+      {
+        at: new Date().toISOString(),
+        environment: 'headless chromium (SwiftShader)',
+        note: '実機計測ではない。パス枚数と強度のトレードオフを見るための実測値',
+        tuning: presentationConfig.tuning ?? null,
+        measurements,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  console.log(`frame budget: ${budgetPath}`);
+  for (const m of measurements) {
+    console.log(`     ${m.label}: ${m.averageMs}ms / 予算 ${m.budgetMs}ms / passes ${m.passes.join(',') || 'なし'}`);
+  }
 
   await browser.close();
 } finally {

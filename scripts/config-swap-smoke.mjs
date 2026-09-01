@@ -63,14 +63,15 @@ try {
       NA_SMOKE_PORT: process.env.NA_SMOKE_SWAP_PORT ?? '8802',
       // 重いパス構成を意図的に入れるので、予算は advisory（実測値は必ず出す）。
       NA_SMOKE_BUDGET_ADVISORY: '1',
+      NA_SMOKE_BUDGET_OUT: 'artifacts/frame-budget-swap.json',
+      NA_SMOKE_SHOT: 'artifacts/stylized-swap.png',
+      NA_SMOKE_GREYBOX_SHOT: 'artifacts/greybox-swap.png',
     },
   });
   if (result.status !== 0) {
     console.error('[swap] 差し替えツリーで smoke が失敗した');
     process.exit(result.status ?? 1);
   }
-  // 差し替え後の画面を別名で残す（既定の greybox の画面は上書きしない）。
-  cpSync('artifacts/m2-greybox.png', 'artifacts/stylized-swap.png');
   console.log('[swap] screenshot: artifacts/stylized-swap.png');
   console.log('[swap] config 差し替えだけで反映される（ソース修正なし）');
 } finally {

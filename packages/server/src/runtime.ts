@@ -169,6 +169,10 @@ export function printStartupLabels(runtime: Runtime): void {
   console.log(
     `[render] 未確定（仮値のまま動かす）: ${unconfirmedPresentation(runtime.renderConfig).join(', ') || 'なし'}`,
   );
+  console.log(
+    `[render] 値の熟度: ${runtime.renderConfig.tuning.status}` +
+      (runtime.renderConfig.tuning.status === 'first-pass' ? '（要調整・確定は加藤さん）' : ''),
+  );
   console.log(`[market] seed: ${runtime.seedInput} -> ${runtime.sim.seed}`);
   console.log(`[market] 仮値: ${TUNING_PROVISIONAL_NOTE}`);
   console.log(

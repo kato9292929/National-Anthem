@@ -17,6 +17,7 @@ import { buildLayout } from './layout.js';
 import { buildScene, drawStallLabel, labelColors, setGateOpen, type LabelColors, type StallObject } from './scene.js';
 import { PresentationLayer } from './presentation/index.js';
 import { fetchPresentationConfig, initialMode, unconfirmedList } from './presentation/config.js';
+import { isFirstPass } from '@na/shared';
 import { stallMaterial } from './presentation/materials.js';
 
 /**
@@ -245,6 +246,7 @@ async function main(): Promise<void> {
         passes: layer.passIds,
         stats: layer.stats(),
         unconfirmed: unconfirmedList(presentation),
+        firstPass: isFirstPass(presentation),
       },
       world,
       session,

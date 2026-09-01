@@ -1,97 +1,103 @@
 {
-  "$comment": "presentation 層。色・質感・パス構成はすべて【仮値（ニュートラル既定）】。確定は加藤さん。world/world.config.json の presentation ブロックが範囲の宣言で、実体はここ。",
+  "$comment": "presentation 層。方向は確定（ウルの形・要素 ＋ Donwood の暗い質感）だが、値は【一次案・要調整】。正確な hex と強度は加藤さんが実参照から確定する。",
   "version": "0",
   "declared_in": "world/world.config.json#presentation",
   "confirmed": false,
-  "mode": "greybox",
+  "tuning": {
+    "status": "first-pass",
+    "owner": "kato",
+    "note": "方向（古代ウルの市場＋Donwood 系ディストレス）を翻訳した一次値。hex は eyedropper、強度は実機計測で差し替える。"
+  },
+  "mode": "stylized",
   "palette": {
-    "$comment": "グレイボックスの無地。確定した配色ではない。",
+    "$comment": "【一次案・要調整】ウルの暖色（生成り・砂・黄土・レンガ褐色）を低彩度で暗く沈めた値。真昼の彩度は出さない。影は黒寄り。",
     "confirmed": false,
     "colors": {
-      "sky": "#1b1c1e",
-      "fog": "#1b1c1e",
-      "floor": "#3a3b3d",
-      "wall": "#2e2f31",
-      "stallImport": "#6f7174",
-      "stallExport": "#54565a",
-      "counter": "#86888c",
-      "highlight": "#b9bcc0",
-      "gateClosed": "#7a6f5c",
-      "gateOpen": "#5c6f7a",
-      "lightSky": "#ffffff",
-      "lightGround": "#404040",
-      "lightKey": "#ffffff",
-      "labelBackground": "rgba(20,21,23,0.86)",
-      "labelBorder": "#6a6d72",
-      "labelBorderShock": "#d9c48a",
-      "labelBorderOpen": "#9fd39f",
-      "labelBorderClosed": "#a38f5c",
-      "labelTitle": "#e6e7e9",
-      "labelBody": "#b9bcc0",
-      "labelOpen": "#9fd39f",
-      "labelClosed": "#d9c48a"
+      "sky": "#1a1611",
+      "fog": "#1e1811",
+      "floor": "#544737",
+      "wall": "#63503a",
+      "stallImport": "#806a52",
+      "stallExport": "#6b5942",
+      "counter": "#8f7a5c",
+      "highlight": "#cbb694",
+      "gateClosed": "#6b563c",
+      "gateOpen": "#86745a",
+      "lightSky": "#d9b483",
+      "lightGround": "#221a12",
+      "lightKey": "#e0bd8a",
+      "labelBackground": "rgba(18,15,12,0.88)",
+      "labelBorder": "#6a5a45",
+      "labelBorderShock": "#b98f4a",
+      "labelBorderOpen": "#7f8f6a",
+      "labelBorderClosed": "#8a7248",
+      "labelTitle": "#e8dfd0",
+      "labelBody": "#b9a88f",
+      "labelOpen": "#8fb07a",
+      "labelClosed": "#c8a24f"
     }
   },
   "lighting": {
+    "$comment": "【一次案・要調整】真昼ではなく低い斜光／薄暮寄り。暗部を潰し気味（低キー）にして陰影を強く出す。",
     "confirmed": false,
-    "ambientIntensity": 1.15,
-    "keyIntensity": 0.55,
-    "fogNear": 18,
-    "fogFar": 120
+    "ambientIntensity": 0.8,
+    "keyIntensity": 1.15,
+    "fogNear": 22,
+    "fogFar": 110
   },
   "materials": {
-    "$comment": "要素種別ごとのスロット。stylized のときだけ shader が効く。params はすべてニュートラル既定（0 = 効果なし）。",
+    "$comment": "【一次案・要調整】floor=土/敷石、wall=日干しレンガの塊、stall=木枠＋日除け布、counter/gate=木・石。量子化と揺らぎで手描きの崩れを出す。",
     "confirmed": false,
     "slots": {
       "floor": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 0,
-          "rim": 0,
-          "warp": 0,
-          "tint": 0
+          "bands": 5,
+          "rim": 0.05,
+          "warp": 0.02,
+          "tint": 0.06
         }
       },
       "wall": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 0,
-          "rim": 0,
-          "warp": 0,
-          "tint": 0
+          "bands": 4,
+          "rim": 0.08,
+          "warp": 0.035,
+          "tint": 0.1
         }
       },
       "stall": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 0,
-          "rim": 0,
-          "warp": 0,
-          "tint": 0
+          "bands": 4,
+          "rim": 0.12,
+          "warp": 0.03,
+          "tint": 0.08
         }
       },
       "counter": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 0,
-          "rim": 0,
-          "warp": 0,
-          "tint": 0
+          "bands": 3,
+          "rim": 0.1,
+          "warp": 0.02,
+          "tint": 0.06
         }
       },
       "gate": {
         "shader": "stylized-surface",
         "params": {
-          "bands": 0,
-          "rim": 0,
-          "warp": 0,
-          "tint": 0
+          "bands": 3,
+          "rim": 0.14,
+          "warp": 0.015,
+          "tint": 0.05
         }
       }
     }
   },
   "postprocess": {
-    "$comment": "順序も on/off も強度もここで組み替える。既定はすべて無効（＝素の描画と同じ絵）。appliesTo でどのモードに掛けるかを決める（既定は stylized だけ）。",
+    "$comment": "【一次案・要調整】Donwood 質感の芯。主軸は posterize（階調落とし）＋ outline（インク線）＋ grain（紙目）、colorGrade で暖色を沈める。dither は任意なので既定は無効。tonemap は既存のまま無効。順序はこの配列のとおり。",
     "confirmed": false,
     "enabled": true,
     "appliesTo": [
@@ -108,10 +114,36 @@
       },
       {
         "id": "posterize",
-        "enabled": false,
-        "strength": 0,
+        "enabled": true,
+        "strength": 0.45,
         "params": {
-          "steps": 8
+          "steps": 6
+        }
+      },
+      {
+        "id": "outline",
+        "enabled": true,
+        "strength": 0.4,
+        "params": {
+          "threshold": 0.14
+        }
+      },
+      {
+        "id": "colorGrade",
+        "enabled": true,
+        "strength": 0.25,
+        "params": {
+          "shadowShift": 0.06,
+          "highlightShift": 0.02
+        }
+      },
+      {
+        "id": "grain",
+        "enabled": true,
+        "strength": 0.06,
+        "params": {
+          "scale": 2.5,
+          "speed": 0.15
         }
       },
       {
@@ -121,43 +153,17 @@
         "params": {
           "scale": 1
         }
-      },
-      {
-        "id": "outline",
-        "enabled": false,
-        "strength": 0,
-        "params": {
-          "threshold": 0.2
-        }
-      },
-      {
-        "id": "grain",
-        "enabled": false,
-        "strength": 0,
-        "params": {
-          "scale": 1,
-          "speed": 0
-        }
-      },
-      {
-        "id": "colorGrade",
-        "enabled": false,
-        "strength": 0,
-        "params": {
-          "shadowShift": 0,
-          "highlightShift": 0
-        }
       }
     ]
   },
   "assets": {
-    "$comment": "後で手描きテクスチャやメッシュを入れるための受け口。今は空。生成ツールは呼ばない。",
+    "$comment": "後で手描きテクスチャ（紙目・レンガ・布）やメッシュを入れるための受け口。今は空。生成ツールは呼ばない。",
     "confirmed": false,
     "textures": {},
     "meshes": {}
   },
   "performance": {
-    "$comment": "【仮値】ポスプロ有効時のフレーム予算。超えたら画面とログに出す（隠さない）。",
+    "$comment": "【一次案・要調整】パス枚数と強度はフレーム予算とのトレードオフ。実機計測は加藤さん段階。headless（SwiftShader）は実機より大幅に遅い。",
     "confirmed": false,
     "frameBudgetMs": 33,
     "headlessFrameBudgetMs": 60

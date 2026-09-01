@@ -32,10 +32,21 @@ export interface PostPassConfig {
   params: Record<string, number>;
 }
 
+/** 値の熟度。first-pass = 方向を翻訳しただけの一次値（要調整）。 */
+export type TuningStatus = 'first-pass' | 'confirmed';
+
+export interface TuningNote {
+  status: TuningStatus;
+  owner: string;
+  /** どこから確定させるか（実参照など）。 */
+  note: string;
+}
+
 export interface PresentationConfig {
   version: string;
   declared_in: string;
   confirmed: boolean;
+  tuning: TuningNote;
   mode: RenderMode;
   palette: { confirmed: boolean; colors: Record<string, string> };
   lighting: {
@@ -55,6 +66,11 @@ export interface PresentationConfig {
   };
   assets: { confirmed: boolean; textures: Record<string, string>; meshes: Record<string, string> };
   performance: { confirmed: boolean; frameBudgetMs: number; headlessFrameBudgetMs: number };
+}
+
+/** 一次値のまま動いているか。true の間は「要調整」。 */
+export function isFirstPass(config: PresentationConfig): boolean {
+  return config.tuning.status === 'first-pass';
 }
 
 /** 画面に出す前に、まだ確定していない塊を数え上げる。 */
@@ -136,6 +152,18 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
     version: str(root['version'], source, 'version'),
     declared_in: str(root['declared_in'], source, 'declared_in'),
     confirmed: bool(root['confirmed'], source, 'confirmed'),
+    tuning: (() => {
+      const tuning = obj(root['tuning'], source, 'tuning');
+      const status = oneOf(tuning['status'], ['first-pass', 'confirmed'] as const, source, 'tuning.status');
+      if (status === 'confirmed' && !bool(root['confirmed'], source, 'confirmed')) {
+        throw new Error(`${source}: tuning.status が confirmed なのに confirmed:false のまま`);
+      }
+      return {
+        status,
+        owner: str(tuning['owner'], source, 'tuning.owner'),
+        note: str(tuning['note'], source, 'tuning.note'),
+      };
+    })(),
     mode: oneOf(root['mode'], ['greybox', 'stylized'] as const, source, 'mode'),
     palette: {
       confirmed: bool(palette['confirmed'], source, 'palette.confirmed'),

@@ -73,8 +73,10 @@ function main(): void {
     presentationConfig: () => ({
       config: runtime.renderConfig,
       unconfirmed: unconfirmedPresentation(runtime.renderConfig),
+      tuning: runtime.renderConfig.tuning,
       notes: {
-        scope: '色・質感・パス構成は加藤さん確定待ち。ニュートラル既定（0 = 効果なし）で動かしている',
+        scope:
+          '方向（ウルの形＋Donwood の暗い質感）は確定。色・強度は一次案（要調整）で、確定は加藤さんが実参照から行う',
         swap: 'config 差し替えだけで見た目が変わる（ソース修正なし）',
         toggle: 'greybox ↔ stylized は残す。P キー、または ?render=stylized',
       },

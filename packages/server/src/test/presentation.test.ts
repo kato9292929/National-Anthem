@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
+  isFirstPass,
   MATERIAL_SLOT_IDS,
   POST_PASS_IDS,
   requireColor,
@@ -14,8 +15,10 @@ const loaded = loadPresentationConfig({});
 const config = loaded.value;
 const raw = JSON.parse(readFileSync(loaded.path, 'utf8')) as Record<string, unknown>;
 
-test('見た目はすべて未確定で、ニュートラル既定（＝効果なし）で動く', () => {
+test('見た目は一次案のまま（方向は確定・値は要調整）', () => {
   assert.equal(config.confirmed, false);
+  assert.equal(isFirstPass(config), true, '一次値であることを示していない');
+  assert.equal(config.tuning.owner, 'kato');
   assert.deepEqual(unconfirmedPresentation(config).sort(), [
     'assets',
     'lighting',
@@ -24,22 +27,93 @@ test('見た目はすべて未確定で、ニュートラル既定（＝効果�
     'performance',
     'postprocess',
   ]);
-  for (const pass of config.postprocess.passes) {
-    assert.ok(!pass.enabled || pass.strength === 0, `${pass.id} が既定で効いている`);
-  }
-  for (const slot of MATERIAL_SLOT_IDS) {
-    for (const [key, value] of Object.entries(config.materials.slots[slot].params)) {
-      assert.equal(value, 0, `materials.slots.${slot}.params.${key} が既定で効いている`);
-    }
-  }
-  assert.deepEqual(config.assets.textures, {}, 'アセットの受け口は空');
+  assert.deepEqual(config.assets.textures, {}, 'アセットの受け口は空のまま');
   assert.deepEqual(config.assets.meshes, {});
 });
 
-test('greybox が既定で、stylized はトグルで入る', () => {
-  assert.equal(config.mode, 'greybox');
+test('一次案の芯: posterize → outline → colorGrade → grain の順で積む', () => {
+  const active = config.postprocess.passes.filter((p) => p.enabled && p.strength > 0).map((p) => p.id);
+  assert.deepEqual(active, ['posterize', 'outline', 'colorGrade', 'grain']);
+  for (const pass of config.postprocess.passes) {
+    assert.ok(pass.strength >= 0 && pass.strength <= 1, `${pass.id} の強度が範囲外`);
+    if (!pass.enabled) assert.equal(pass.strength, 0, `${pass.id} は無効なのに強度が残っている`);
+  }
+  // dither は任意なので既定は無効、tonemap は既存のまま。
+  assert.equal(config.postprocess.passes.find((p) => p.id === 'dither')!.enabled, false);
+  assert.equal(config.postprocess.passes.find((p) => p.id === 'tonemap')!.enabled, false);
+});
+
+test('一次案の質感: すべてのスロットに値が入り、暗く低彩度に寄っている', () => {
+  for (const slot of MATERIAL_SLOT_IDS) {
+    const params = config.materials.slots[slot].params;
+    for (const key of ['bands', 'rim', 'warp', 'tint']) {
+      assert.equal(typeof params[key], 'number', `materials.slots.${slot}.params.${key} が無い`);
+    }
+    assert.ok(params['bands']! >= 2, `${slot} の階調が量子化されていない`);
+  }
+
+  // Donwood 方向: 暗く低彩度。空と床の明度・彩度を数値で押さえる（一次値の当たり判定）。
+  for (const key of ['sky', 'fog', 'floor', 'wall']) {
+    const { luminance, saturation } = hslOf(requireColor(config, key));
+    assert.ok(luminance < 0.35, `${key} が明るすぎる: ${luminance.toFixed(2)}`);
+    assert.ok(saturation < 0.5, `${key} の彩度が高すぎる: ${saturation.toFixed(2)}`);
+  }
+  // 暖色寄り（赤成分が青成分より大きい）。
+  for (const key of ['floor', 'wall', 'stallImport', 'counter']) {
+    const { r, b } = rgbOf(requireColor(config, key));
+    assert.ok(r > b, `${key} が暖色に寄っていない`);
+  }
+  assert.ok(config.lighting.ambientIntensity < config.lighting.keyIntensity, '低キーになっていない');
+});
+
+test('ニュートラル構成（すべて無効・0）も引き続き通る', () => {
+  const neutral = structuredClone(raw) as {
+    mode: string;
+    postprocess: { passes: { enabled: boolean; strength: number }[] };
+    materials: { slots: Record<string, { params: Record<string, number> }> };
+  };
+  neutral.mode = 'greybox';
+  for (const pass of neutral.postprocess.passes) {
+    pass.enabled = false;
+    pass.strength = 0;
+  }
+  for (const slot of Object.values(neutral.materials.slots)) {
+    for (const key of Object.keys(slot.params)) slot.params[key] = 0;
+  }
+  const parsed = validatePresentationConfig(neutral, 'neutral');
+  assert.equal(parsed.mode, 'greybox');
+  assert.equal(parsed.postprocess.passes.every((p) => !p.enabled), true);
+});
+
+test('greybox 経路は残す。ポスプロは stylized にだけ掛ける', () => {
+  assert.equal(config.mode, 'stylized', '方向が確定したので既定は stylized');
+  assert.deepEqual(config.postprocess.appliesTo, ['stylized'], 'greybox は素のまま残す');
   assert.equal(config.declared_in, 'world/world.config.json#presentation');
 });
+
+test('確定していないのに confirmed 扱いにできない', () => {
+  const lying = structuredClone(raw) as { tuning: { status: string } };
+  lying.tuning.status = 'confirmed';
+  assert.throws(() => validatePresentationConfig(lying, 'test'), /confirmed:false のまま/);
+});
+
+function rgbOf(hex: string): { r: number; g: number; b: number } {
+  const value = hex.replace('#', '');
+  return {
+    r: parseInt(value.slice(0, 2), 16) / 255,
+    g: parseInt(value.slice(2, 4), 16) / 255,
+    b: parseInt(value.slice(4, 6), 16) / 255,
+  };
+}
+
+function hslOf(hex: string): { luminance: number; saturation: number } {
+  const { r, g, b } = rgbOf(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const luminance = (max + min) / 2;
+  const saturation = max === min ? 0 : (max - min) / (1 - Math.abs(2 * luminance - 1));
+  return { luminance, saturation };
+}
 
 test('未知のパス種別・スロットは受け付けない（推測で通さない）', () => {
   const withUnknownPass = structuredClone(raw) as { postprocess: { passes: { id: string }[] } };

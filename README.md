@@ -212,8 +212,11 @@ principal が委託を出す → 代理エージェントが各レグを実行�
 
 ## 見た目の受け口（presentation 層）
 
-見た目の芯は three の自前シェーダ＋ポストプロセスで出す。**この段階で作ったのは受け口と pipeline の箱だけで、
-色・質感・パラメータは決めていない**（加藤さん確定待ち）。生成ツールには一切繋いでいない。
+見た目の芯は three の自前シェーダ＋ポストプロセスで出す。生成ツールには一切繋いでいない。
+
+**方向は確定**（古代ウルの市場の形・要素 ＋ Donwood 系の暗いディストレス質感）。
+**値は一次案（要調整）** で、`tuning.status: "first-pass"` と全ブロック `confirmed: false` のまま置いてある。
+正確な hex と各パスの最終強度は加藤さんが実参照から確定する。
 
 ### 構成
 
@@ -240,17 +243,36 @@ greybox 経路は素のまま残り、A/B 比較ができる。
 **画面のエラー帯とコンソールの両方に出す**。HUD の `budget` 行にも常時出る。
 smoke は greybox と stylized の両方を計測する（この環境の SwiftShader での実測値は README の数字ではなく毎回の出力を見る）。
 
-### 未確定（すべて仮値・ニュートラル既定）
+### 一次案の中身（すべて要調整）
 
-`palette` / `lighting` / `materials` / `postprocess` / `assets` / `performance` の 6 ブロックが `confirmed: false`。
-起動ログと `GET /api/presentation/config` と HUD の「未確定」行に出る。
-既定値はすべてニュートラル（パスは無効、シェーダのパラメータは 0）なので、**確定前でも素の greybox と同じ絵で動く**。
+| ブロック | 一次案の方向 | 要調整の中心 |
+| --- | --- | --- |
+| `palette` | ウルの暖色（生成り・砂・黄土・レンガ褐色）を低彩度で暗く沈める。影は黒寄り、真昼の彩度は出さない | hex 全部。実参照から eyedropper で差し替え |
+| `lighting` | 低い斜光／薄暮寄りの低キー（`ambientIntensity: 0.8` < `keyIntensity: 1.15`）、霧で奥を落とす | 明暗の落差と霧の距離 |
+| `materials` | floor=土/敷石、wall=日干しレンガの塊、stall=木枠＋日除け布、counter/gate=木・石。階調の量子化（bands 3〜5）と揺らぎで手描きの崩れ | bands / rim / warp / tint の各値 |
+| `postprocess` | Donwood 質感の芯を **posterize → outline → colorGrade → grain** の順で積む。dither は任意なので無効、tonemap は据え置き | 各パスの強度とパス枚数（フレーム予算とのトレードオフ） |
+| `assets` | 空のまま（手描きテクスチャとメッシュの受け口だけ） | 実アセットが入る工程は別 |
+| `performance` | `frameBudgetMs: 33` / headless は 60 | 実機で測り直す |
+
+未確定は起動ログ・`GET /api/presentation/config`・HUD の「未確定」行に出る。
+HUD の render 行には `一次案` タグが出る。ニュートラル構成（全パス無効・パラメータ 0）も引き続き有効で、
+テストで「通ること」を固定してある。
+
+### フレーム予算の実測（headless / SwiftShader）
+
+`npm run smoke` が毎回測って `artifacts/frame-budget.json` に残す（**実機計測ではない**）。
+直近の値は greybox が約 28ms、stylized（4 パス）が約 80ms で、headless の予算 60ms を超えている。
+**超過は隠さない**: 画面のエラー帯・コンソール・HUD の budget 行に出て、smoke は実測値付きで警告を出す
+（ポスプロが掛かっている計測は advisory、素の経路は予算を守らせる）。パス枚数と強度の詰めは実機計測の段階で。
 
 ### 差し替えの実証
 
 `npm run smoke:swap` が、固有名・カテゴリ・room に加えて**見た目も差し替えた別 config ツリー**で同じ smoke を通す
 （`mode: stylized`、posterize + outline + grain、床と壁の色、マテリアルのパラメータ）。
-ソース修正ゼロで、モード・パス構成・色・強度が反映される。画面は `artifacts/stylized-swap.png` に残る。
+ソース修正ゼロで、モード・パス構成・色・強度が反映される。
+
+`artifacts/` に残る画面: `render-current.png`（現在の config = stylized 一次案）、
+`greybox-compare.png`（同じ立ち位置の greybox）、`stylized-swap.png` / `greybox-swap.png`（差し替えツリー）。
 
 ## 実装するときの決まり
 
@@ -269,7 +291,7 @@ smoke は greybox と stylized の両方を計測する（この環境の SwiftS
 | --- | --- | --- |
 | `packages/server/src/market/tuning.ts` | 市場の数値（基準価格・在庫・補充・消費・弾力性・ショック確率）はすべて仮値 | v0 の経済仕様が確定したら、このファイルの差し替えで済む |
 | `packages/server/src/index.ts` の `TICK_INTERVAL_MS` | tick の実時間間隔（1000ms）は仮値 | 同上 |
-| `config/presentation.config.json` | 色・照明・マテリアルのパラメータ・ポスプロの構成・フレーム予算。6 ブロックすべて `confirmed: false` のニュートラル既定 | 加藤さん確定時。config 差し替えのみ |
+| `config/presentation.config.json` | 色・照明・マテリアルのパラメータ・ポスプロの構成・フレーム予算。方向は確定、値は**一次案**（`tuning.status: "first-pass"`、6 ブロックすべて `confirmed: false`） | 加藤さんが実参照から確定。config 差し替えのみ |
 | `packages/client/src/greybox.ts` | グレイボックスの**寸法と配置**（色は presentation config に移した） | レイアウト確定時 |
 | `packages/client/src/hud.ts` の `PLACEHOLDER_HUD` | inventory / credits / 接続エージェント数はゼロ固定のプレースホルダ（画面にも「仮値」と出る） | M3（identity/wallet）以降 |
 | `scripts/smoke.mjs` の `FRAME_BUDGET_MS` | ヘッドレス（SwiftShader）向けの緩い予算 50ms | 対象デバイスが決まったら実機基準へ |

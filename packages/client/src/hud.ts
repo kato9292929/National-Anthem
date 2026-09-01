@@ -22,6 +22,7 @@ export interface HudHandles {
       passes: string[];
       stats: { averageMs: number; budgetMs: number; exceeded: boolean };
       unconfirmed: string[];
+      firstPass: boolean;
     };
     world: WorldPayload;
     session: SessionPayload | null;
@@ -83,7 +84,9 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
 
   return {
     update({ presentation, world: payload, session, board, market, focused, fps, frameMs, stale }) {
-      el('stat-mode').textContent = `${presentation.mode}${presentation.mode === 'greybox' ? '' : ' (P で切替)'}`;
+      el('stat-mode').innerHTML =
+        `${escapeHtml(presentation.mode)} <span class="dim">(P で切替)</span>` +
+        (presentation.firstPass ? ' <span class="tag">一次案</span>' : '');
       el('stat-passes').textContent = presentation.passes.length > 0 ? presentation.passes.join(',') : 'なし';
       const stats = presentation.stats;
       el('stat-budget').innerHTML =
