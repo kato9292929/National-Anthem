@@ -473,6 +473,36 @@ try {
     for (const notice of budgetNotices) console.log(`     ${notice}`);
   }
 
+  // 生成アセット（NA_SMOKE_ASSETS=1 のときだけ）。
+  if (process.env.NA_SMOKE_ASSETS === '1') {
+    const meshReport = await page.evaluate(() => window.__na_debug.meshReport());
+    const failures = await page.evaluate(() => window.__na_debug.meshFailures());
+    check(failures.length === 0, '割り当てた .glb がすべて読める', failures.map((f) => `${f.slot}:${f.error}`).join(' | '));
+    check(meshReport.length > 0, '生成メッシュがスロットに入る', `${meshReport.length} スロット`);
+    check(
+      meshReport.every((m) => m.reducedTriangles <= 40000),
+      '生成メッシュがポリゴン予算内（decimation 後）',
+      meshReport.map((m) => `${m.slot}:${m.reducedTriangles}`).join(', '),
+    );
+    check(
+      meshReport.every((m) => m.placeholder === true),
+      'ダミーはダミーとして扱う（placeholder フラグ）',
+      `placeholder ${meshReport.filter((m) => m.placeholder).length}/${meshReport.length}`,
+    );
+
+    // 生成メッシュ ON で立ち上がっている → greybox へ戻せる → また生成へ。
+    await page.evaluate(() => window.__na_debug.setAssets(true));
+    await sleep(200);
+    check((await page.evaluate(() => window.__na_debug.assetsEnabled())) === true, '生成メッシュに切り替わる');
+    await page.evaluate(() => window.__na_debug.moveTo(0, 11));
+    await sleep(300);
+    await page.screenshot({ path: process.env.NA_SMOKE_MESH_SHOT ?? 'artifacts/assets-mesh.png' });
+    await page.evaluate(() => window.__na_debug.setAssets(false));
+    await sleep(200);
+    check((await page.evaluate(() => window.__na_debug.assetsEnabled())) === false, 'greybox の箱に戻せる（greybox は消さない）');
+    await page.evaluate(() => window.__na_debug.setAssets(true));
+  }
+
   check(
     (await page.evaluate(() => window.__na_debug.contextLost())) === false,
     'WebGL コンテキストが生きている',

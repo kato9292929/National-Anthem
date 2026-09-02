@@ -174,7 +174,7 @@
     ]
   },
   "assets": {
-    "$comment": "後で手描きテクスチャ（紙目・レンガ・布）やメッシュを入れるための受け口。今は空。生成ツールは呼ばない。",
+    "$comment": "要素種別ごとに生成メッシュを割り当てる受け口。url が空なら greybox 形状。ダミーは placeholder:true を残し、実物に見せない。生成ツールは config には現れない。",
     "confirmed": false,
     "textures": {},
     "meshes": {}

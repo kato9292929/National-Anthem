@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/shared",
     "packages/server",
-    "packages/client"
+    "packages/client",
+    "packages/tools"
   ],
   "engines": {
     "node": ">=22"
@@ -14,14 +15,16 @@
   "scripts": {
     "build": "npm run build -w @na/shared && npm run build -w @na/server && npm run build -w @na/client",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run build -w @na/shared && npm run test -w @na/server",
+    "test": "npm run build -w @na/shared && npm run test -w @na/server && npm run test -w @na/tools",
     "sim": "npm run sim -w @na/server",
     "dev:server": "npm run dev -w @na/server",
     "dev:client": "npm run dev -w @na/client",
     "smoke": "node scripts/smoke.mjs",
     "agent:dry-run": "npm run agent:dry-run -w @na/server",
     "smoke:swap": "node scripts/config-swap-smoke.mjs",
-    "verify:b": "node scripts/verify-b.mjs"
+    "verify:b": "node scripts/verify-b.mjs",
+    "assets:placeholders": "npm run build -w @na/tools && node packages/tools/dist/make-placeholders.js",
+    "assets:smoke": "node scripts/assets-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

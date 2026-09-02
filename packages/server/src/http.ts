@@ -36,6 +36,8 @@ export interface HttpOptions {
   port: number;
   /** 指定すると同一オリジンでクライアントの静的ファイルを配信する。 */
   clientDist?: string | undefined;
+  /** 生成メッシュ等のアセットを /assets/ で配信する（スモーク検証用）。 */
+  assetsDir?: string | undefined;
 }
 
 const MIME: Record<string, string> = {
@@ -47,6 +49,7 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.glb': 'model/gltf-binary',
 };
 
 export function createHttpServer(options: HttpOptions) {
@@ -237,6 +240,9 @@ export function createHttpServer(options: HttpOptions) {
         break;
     }
 
+    if (req.method === 'GET' && options.assetsDir && url.pathname.startsWith('/assets/')) {
+      if (serveStatic(options.assetsDir, url.pathname.slice('/assets'.length), res)) return;
+    }
     if (req.method === 'GET' && options.clientDist) {
       if (serveStatic(options.clientDist, url.pathname, res)) return;
     }

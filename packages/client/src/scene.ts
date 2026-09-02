@@ -4,6 +4,8 @@ import { GREYBOX } from './greybox.js';
 import type { MarketLayout, StallSlot } from './layout.js';
 import { cssColor } from './presentation/config.js';
 import { clothMaterial, keyLightDirection, stallMaterial, type MaterialSet } from './presentation/materials.js';
+import type { LoadedMesh } from './presentation/meshes.js';
+import type { MaterialSlotId } from '@na/shared';
 
 /** 看板に描く色。presentation config から作る（ここに色を書かない）。 */
 export interface LabelColors {
@@ -77,6 +79,25 @@ export interface BuiltScene {
   bounds: { halfWidth: number; halfDepth: number };
   /** モードを切り替えたときに、同じ形へマテリアルだけ差し直す。 */
   applyMaterials(materials: MaterialSet, focusedStallId: string | null): void;
+  /**
+   * 生成メッシュに差し替える（use=true）／greybox の箱に戻す（use=false）。
+   * 割り当ての無い要素種別は箱のまま。greybox 経路は消さない。
+   */
+  applyMeshes(meshes: Map<MaterialSlotId, LoadedMesh>, use: boolean): void;
+}
+
+/** greybox の箱と、そこへ差し込む生成メッシュの置き場。 */
+interface MeshAnchor {
+  slot: MaterialSlotId;
+  /** greybox 側のメッシュ（複数持つ要素もある）。 */
+  boxes: THREE.Object3D[];
+  /** 箱の中心・寸法・向き（生成メッシュを合わせる基準）。 */
+  position: THREE.Vector3;
+  rotationY: number;
+  /** 箱の footprint（生成メッシュの長辺をこれに合わせる）。 */
+  footprint: number;
+  /** 差し込んだ生成メッシュ（インスタンス）。 */
+  instance: THREE.Object3D | null;
 }
 
 /** 門が要る room（standing のしきい値がある room）だけを門にする。 */
@@ -124,6 +145,7 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
   const width = layout.halfWidth * 2;
   const depth = layout.halfDepth * 2;
 
+  const anchors: MeshAnchor[] = [];
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), materials.floor);
   const walls: THREE.Mesh[] = [];
   floor.rotation.x = -Math.PI / 2;
@@ -142,9 +164,27 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
     wall.position.set(x, hh / 2, z);
     scene.add(wall);
     walls.push(wall);
+    anchors.push({
+      slot: 'wall',
+      boxes: [wall],
+      position: wall.position.clone(),
+      rotationY: 0,
+      footprint: Math.max(w, hh, d),
+      instance: null,
+    });
   }
 
   const stalls = layout.slots.map((slot) => buildStall(slot, materials, colors));
+  for (const stall of stalls) {
+    anchors.push({
+      slot: 'stall',
+      boxes: [stall.body],
+      position: new THREE.Vector3(stall.slot.x, 0, stall.slot.z),
+      rotationY: stall.slot.rotationY,
+      footprint: Math.max(GREYBOX.stall.width, GREYBOX.stall.height, GREYBOX.stall.depth),
+      instance: null,
+    });
+  }
   for (const stall of stalls) {
     scene.add(stall.group);
     // 看板はワールド座標に置く（group は回転しているので入れ子にしない）。
@@ -152,6 +192,24 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
   }
 
   const { gates, partitions, partitionMeshes } = buildPartition(scene, layout, gateSpecs, wallMaterial, materials, colors);
+  for (const gate of gates) {
+    anchors.push({
+      slot: 'gate',
+      boxes: [gate.door],
+      position: gate.door.position.clone(),
+      rotationY: 0,
+      footprint: Math.max(GREYBOX.gate.doorWidth, GREYBOX.gate.doorHeight),
+      instance: null,
+    });
+  }
+  anchors.push({
+    slot: 'floor',
+    boxes: [floor],
+    position: new THREE.Vector3(0, 0, 0),
+    rotationY: 0,
+    footprint: Math.max(width, depth),
+    instance: null,
+  });
 
   const colliders: Collider[] = [
     ...stalls.map((stall) => ({ bounds: stall.bounds, isSolid: () => true })),
@@ -165,6 +223,35 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
     gates,
     colliders,
     bounds: { halfWidth: layout.halfWidth, halfDepth: layout.halfDepth },
+    applyMeshes: (meshes, use) => {
+      for (const anchor of anchors) {
+        const loaded = meshes.get(anchor.slot);
+        // 割り当てが無ければ箱のまま。
+        if (!use || !loaded) {
+          if (anchor.instance) {
+            scene.remove(anchor.instance);
+            anchor.instance = null;
+          }
+          for (const box of anchor.boxes) box.visible = true;
+          continue;
+        }
+        // 既に差し込み済みなら作り直さない。
+        if (!anchor.instance) {
+          const instance = loaded.object.clone(true);
+          // footprint に合わせて追加スケール（loader 側で fitLongestEdge 済みだが要素ごとに微調整）。
+          const box = new THREE.Box3().setFromObject(instance);
+          const size = box.getSize(new THREE.Vector3());
+          const longest = Math.max(size.x, size.y, size.z);
+          if (longest > 0 && anchor.footprint > 0) instance.scale.multiplyScalar(anchor.footprint / longest);
+          instance.position.copy(anchor.position);
+          instance.rotation.y = anchor.rotationY;
+          scene.add(instance);
+          anchor.instance = instance;
+        }
+        anchor.instance.visible = true;
+        for (const box of anchor.boxes) box.visible = false;
+      }
+    },
     applyMaterials: (next, focusedStallId) => {
       floor.material = next.floor;
       for (const wall of [...walls, ...partitionMeshes]) wall.material = next.wall;

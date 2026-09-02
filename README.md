@@ -10,7 +10,9 @@
 | `packages/server` | 市場シム（サーバ権威・決定論）と HTTP API |
 | `packages/client` | WebGL 一人称クライアント。グレイボックスの市場空間と HUD |
 | `config/` | world 以外の設定（identity・room・市場構造・x402・privacy・agent・commission・presentation）。ソースにリテラルを書かない |
-| `packages/client/src/presentation/` | 見た目の受け口（マテリアルのスロット・シェーダ・ポスプロ pipeline）。色や強度は config から差す |
+| `packages/client/src/presentation/` | 見た目の受け口（マテリアルのスロット・シェーダ・ポスプロ pipeline・生成メッシュの読み込み）。色や強度は config から差す |
+| `packages/tools/` | 生成アセットのツール（GLB ライタ・placeholder ジェネレータ・生成アダプタ interface） |
+| `assets/meshes/` | 生成メッシュ（現在は placeholder の `.glb`。実物ではない） |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
 | `docs/x402-wire-contract.md` | x402 の実ワイヤ（稼働プロダクト X-alpha / OSD / AA からの引き写し・出どころ付き） |
 | `docs/verification-b-runbook.md` | 区分B の実確認ランブック（段ごとに要る鍵・ネットワーク・仕様と、現状の詰まり） |
@@ -42,6 +44,8 @@ npm run dev:client        # http://localhost:5173（/api はサーバへプロ�
                           #   P キーで greybox ↔ stylized、?render=stylized で起動時から stylized
 npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し artifacts/ に画面を残す
 npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
+npm run assets:placeholders  # 要素種別ごとのダミー .glb を生成（実物ではない）
+npm run assets:smoke      # 生成メッシュのスロット差し替えを一周（区分A）
 npm run agent:dry-run     # M6 の dry-run。1 サイクルのトークン量とコストを出す（LLM 呼び出し 0）
 npm run verify:b          # 区分B の実確認ハーネス。通った段だけ証拠を記録する
 
@@ -313,6 +317,29 @@ HUD の render 行には `一次案` タグが出る。ニュートラル構成�
 - stylized の暗部の底が greybox（Lambert）より明るく、A/B の露出が揃っていなかったので係数を下げた。
 - パスに要るパラメータ（`posterize.levels` など）を **config 読み込み時に検証**するようにした。
   以前はブラウザで実行時に落ちていた。
+
+### 生成アセット（3D メッシュ）
+
+greybox の箱を生成した実メッシュに差し替える配管。**方針は生成アセットで作る**が、
+実生成（Tripo / Meshy への実呼び出し）は区分B。区分A では配管と placeholder（ダミー `.glb`）で一周する。
+
+| 段 | 中身 | 状態 |
+| --- | --- | --- |
+| 生成 | 画像 → `.glb`。アダプタ interface は `packages/tools/src/gen-types.ts` | placeholder のみ。実生成は区分B（鍵が無ければ `MeshGeneratorUnavailableError` で落ちる） |
+| インポート | `.glb` を three へ（`GLTFLoader`） | 済 |
+| 最適化 | 長辺を greybox の箱に正規化、up 補正、ポリゴン予算（40,000 tri）超過は `SimplifyModifier` で decimation | 済 |
+| スロット差し替え | `assets.meshes`（config 駆動）に入れ、要素種別ごとに greybox の箱と差し替え。`M` キーでトグル | 済。greybox は消さない |
+| 質感の統一 | 生成メッシュに presentation の stylized マテリアルを掛ける（stylize-on-top） | 済 |
+| 性能 | 投入後の frame budget を smoke で再計測。超過は画面・コンソール・HUD に出す | 済 |
+
+**ダミーを実物に見せない**: placeholder の `.glb` は `placeholder: true` を config・生成物・HUD（「ダミー」タグ）に残す。
+読み込み失敗は握りつぶさず、画面に出して greybox の箱にフォールバックする（成功に見せない）。
+
+**コスト（区分B）**: `config/assets.config.json` の `budget`。**1 回あたりのコストを実測するまでバッチできない**
+（`requireMeasurementBeforeBatch` / `AssetBatchBlockedError`。osd の再発防止）。キャップ超過も止まる。
+
+**ライセンス**: 無料枠は Tripo が非商用 / Meshy が CC BY。出荷は有料プランで所有権を取るまでしない。
+現在のアセットは placeholder（自前生成の箱・制約なし）。`config/assets.config.json` の `license` に記録。
 
 ### 差し替えの実証
 

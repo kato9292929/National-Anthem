@@ -1,0 +1,29 @@
+{
+  "$comment": "生成アセットの設定。実生成（Tripo / Meshy）は区分B。バッチ前に 1 回あたりのコストを実測し、ハードキャップを超えたら止める（osd の再発防止）。ダミーを実物に見せない。",
+  "version": "0",
+  "generator": {
+    "$comment": "実生成ツール。未指定なら placeholder（ダミー .glb）で配管だけ確認する。",
+    "tool": "placeholder",
+    "confirmed": false,
+    "verified": false
+  },
+  "budget": {
+    "$comment": "【仮値】1 回あたりの実測を入れてから使う。実測前にバッチしない。",
+    "hardCapUsd": 5.0,
+    "warnAtUsd": 2.5,
+    "measuredCostPerMeshUsd": null,
+    "requireMeasurementBeforeBatch": true,
+    "confirmed": false
+  },
+  "license": {
+    "$comment": "無料枠は Tripo が非商用 / Meshy が CC BY。出荷するなら有料プランで所有権を取る。生成物のライセンス状態はここに記録する。",
+    "tripoFree": "non-commercial",
+    "meshyFree": "CC BY",
+    "shipping": "有料プランで所有権を取るまで出荷しない",
+    "currentAssets": "placeholder（自前生成の箱。ライセンス制約なし）"
+  },
+  "polyBudget": {
+    "$comment": "web/モバイルのポリゴン予算（tri）。生成物はデフォルト 2万〜30万なので超えたら decimation で落とす。",
+    "maxTriangles": 40000
+  }
+}

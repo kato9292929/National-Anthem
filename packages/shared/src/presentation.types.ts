@@ -38,6 +38,24 @@ export interface MaterialSlot {
   params: Record<string, number>;
 }
 
+/**
+ * 要素種別に割り当てる生成メッシュ。
+ * url が空なら未割り当て（greybox 形状を使う）。生成ツールは config には現れない。
+ * ダミー（プレースホルダ）は placeholder:true を必ず残す。実物に見せない。
+ */
+export interface MeshAssetSlot {
+  /** アセットの参照（相対パスや asset id）。空なら未割り当て。 */
+  url: string;
+  /** 生成物の由来。tool は生成ツール名、reference は元にした参照画像の記述。 */
+  source: string;
+  /** ダミーの .glb か。区分A の配管確認用は必ず true。 */
+  placeholder: boolean;
+  /** メッシュを greybox の箱に合わせる寸法（m）。長辺をこの値に正規化する。 */
+  fitLongestEdge: number;
+  /** 上向きの補正（度）。生成物の up 軸がまちまちなため。 */
+  rotationDeg: { x: number; y: number; z: number };
+}
+
 export interface PostPassConfig {
   id: PostPassId;
   enabled: boolean;
@@ -88,7 +106,12 @@ export interface PresentationConfig {
     appliesTo: RenderMode[];
     passes: PostPassConfig[];
   };
-  assets: { confirmed: boolean; textures: Record<string, string>; meshes: Record<string, string> };
+  assets: {
+    confirmed: boolean;
+    textures: Record<string, string>;
+    /** 要素種別 → 生成メッシュの割り当て。空なら greybox 形状のまま。 */
+    meshes: Record<MaterialSlotId, MeshAssetSlot>;
+  };
   performance: { confirmed: boolean; frameBudgetMs: number; headlessFrameBudgetMs: number };
 }
 
@@ -117,6 +140,14 @@ function numberMap(input: unknown, source: string, key: string): Record<string, 
     out[name] = num(value, source, `${key}.${name}`);
   }
   return out;
+}
+
+/** 空文字を許す str（url は空＝未割り当て）。 */
+function str2(value: unknown, source: string, key: string): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${source}: ${key} は文字列である必要がある`);
+  }
+  return value;
 }
 
 function stringMap(input: unknown, source: string, key: string): Record<string, string> {
@@ -232,7 +263,42 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
     assets: {
       confirmed: bool(assets['confirmed'], source, 'assets.confirmed'),
       textures: stringMap(assets['textures'], source, 'assets.textures'),
-      meshes: stringMap(assets['meshes'], source, 'assets.meshes'),
+      meshes: (() => {
+        const meshesRaw = obj(assets['meshes'], source, 'assets.meshes');
+        const out = {} as Record<MaterialSlotId, MeshAssetSlot>;
+        for (const key of Object.keys(meshesRaw)) {
+          if (key.startsWith('$')) continue;
+          if (!MATERIAL_SLOT_IDS.includes(key as MaterialSlotId)) {
+            throw new Error(`${source}: 未知のメッシュスロット: ${key}（${MATERIAL_SLOT_IDS.join(' / ')}）`);
+          }
+        }
+        for (const slot of MATERIAL_SLOT_IDS) {
+          const raw = meshesRaw[slot];
+          if (raw === undefined) {
+            out[slot] = { url: '', source: '', placeholder: false, fitLongestEdge: 0, rotationDeg: { x: 0, y: 0, z: 0 } };
+            continue;
+          }
+          const o = obj(raw, source, `assets.meshes.${slot}`);
+          const url = str2(o['url'], source, `assets.meshes.${slot}.url`);
+          const rot = obj(o['rotationDeg'], source, `assets.meshes.${slot}.rotationDeg`);
+          out[slot] = {
+            url,
+            source: str2(o['source'], source, `assets.meshes.${slot}.source`),
+            placeholder: bool(o['placeholder'], source, `assets.meshes.${slot}.placeholder`),
+            fitLongestEdge: num(o['fitLongestEdge'], source, `assets.meshes.${slot}.fitLongestEdge`),
+            rotationDeg: {
+              x: num(rot['x'], source, `assets.meshes.${slot}.rotationDeg.x`),
+              y: num(rot['y'], source, `assets.meshes.${slot}.rotationDeg.y`),
+              z: num(rot['z'], source, `assets.meshes.${slot}.rotationDeg.z`),
+            },
+          };
+          // url があるのに placeholder かどうか未定、を許さない（実物に見せないため）。
+          if (url !== '' && o['placeholder'] === undefined) {
+            throw new Error(`${source}: assets.meshes.${slot} に placeholder が無い（ダミーか実物かを明示する）`);
+          }
+        }
+        return out;
+      })(),
     },
     performance: {
       confirmed: bool(performance['confirmed'], source, 'performance.confirmed'),
@@ -240,6 +306,13 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
       headlessFrameBudgetMs: num(performance['headlessFrameBudgetMs'], source, 'performance.headlessFrameBudgetMs'),
     },
   };
+}
+
+/** 割り当て済みのメッシュスロット（url がある）を返す。 */
+export function assignedMeshSlots(config: PresentationConfig): { slot: MaterialSlotId; asset: MeshAssetSlot }[] {
+  return MATERIAL_SLOT_IDS.map((slot) => ({ slot, asset: config.assets.meshes[slot] })).filter(
+    (entry) => entry.asset.url !== '',
+  );
 }
 
 /** 必要な色が揃っているか。欠けていたら既定値で補わずに落とす。 */

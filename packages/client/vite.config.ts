@@ -10,6 +10,10 @@ export default defineConfig({
         target: `http://localhost:${process.env['NA_SERVER_PORT'] ?? '8787'}`,
         changeOrigin: true,
       },
+      '/assets': {
+        target: `http://localhost:${process.env['NA_SERVER_PORT'] ?? '8787'}`,
+        changeOrigin: true,
+      },
     },
   },
   build: { outDir: 'dist', emptyOutDir: true },

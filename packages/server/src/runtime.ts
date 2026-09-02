@@ -10,6 +10,7 @@ import {
   type RoomsConfig,
   type WorldConfig,
   type AgentConfig,
+  type AssetsConfig,
   type CommissionConfig,
   type MarketStructureConfig,
   type PresentationConfig,
@@ -19,6 +20,7 @@ import {
 } from '@na/shared';
 import {
   loadAgentConfig,
+  loadAssetsConfig,
   loadCommissionConfig,
   loadIdentityConfig,
   loadMarketStructureConfig,
@@ -55,6 +57,7 @@ export interface Runtime {
   marketStructure: MarketStructureConfig;
   /** 見た目の設定。サーバは中身を読まず、そのまま配るだけ。 */
   renderConfig: PresentationConfig;
+  assetsConfig: AssetsConfig;
   identityConfig: IdentityConfig;
   roomsConfig: RoomsConfig;
   identity: IdentityService;
@@ -90,6 +93,7 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   const seedInput = env.require('NA_MARKET_SEED');
   const marketStructure = loadMarketStructureConfig(process.env).value;
   const renderConfig = loadPresentationConfig(process.env).value;
+  const assetsConfig = loadAssetsConfig(process.env).value;
   const sim = new MarketSimulation({ config, seed: seedFrom(seedInput), structure: marketStructure });
 
   const identityConfig = loadIdentityConfig(process.env).value;
@@ -194,6 +198,7 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     seedInput,
     marketStructure,
     renderConfig,
+    assetsConfig,
     identityConfig,
     roomsConfig,
     identity,
@@ -229,6 +234,13 @@ export function printStartupLabels(runtime: Runtime): void {
   );
   console.log(
     `[render] 未確定（仮値のまま動かす）: ${unconfirmedPresentation(runtime.renderConfig).join(', ') || 'なし'}`,
+  );
+  console.log(
+    `[assets] generator=${runtime.assetsConfig.generator.tool}` +
+      `（${runtime.assetsConfig.generator.verified ? '検証済' : '未検証'}）/ ` +
+      `license: ${runtime.assetsConfig.license.currentAssets} / ` +
+      `polyBudget ${runtime.assetsConfig.polyBudget.maxTriangles} tri` +
+      (runtime.assetsConfig.budget.measuredCostPerMeshUsd === null ? ' / コスト未実測（バッチ不可）' : ''),
   );
   console.log(
     `[render] 値の熟度: ${runtime.renderConfig.tuning.status}` +
@@ -317,4 +329,8 @@ export function printStartupLabels(runtime: Runtime): void {
 
 export function resolveClientDist(cwd = process.cwd()): string {
   return resolve(cwd, 'packages/client/dist');
+}
+
+export function resolveAssetsDir(cwd = process.cwd()): string {
+  return resolve(cwd, 'assets');
 }

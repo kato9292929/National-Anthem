@@ -1,0 +1,60 @@
+{
+  "$comment": "ダミー。実物に差し替えるまで placeholder:true。",
+  "meshes": {
+    "wall": {
+      "url": "assets/meshes/wall-mudbrick-module.placeholder.glb",
+      "source": "placeholder (from: 古代ウルの日干しレンガ建築モジュール)",
+      "placeholder": true,
+      "fitLongestEdge": 4.5,
+      "rotationDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "stall": {
+      "url": "assets/meshes/stall-market-stall.placeholder.glb",
+      "source": "placeholder (from: シュメール市場の stall（木枠＋日除け）)",
+      "placeholder": true,
+      "fitLongestEdge": 3.2,
+      "rotationDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "gate": {
+      "url": "assets/meshes/gate-stone-gate.placeholder.glb",
+      "source": "placeholder (from: 石の門柱とまぐさ)",
+      "placeholder": true,
+      "fitLongestEdge": 3.2,
+      "rotationDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "counter": {
+      "url": "assets/meshes/counter-wood-counter.placeholder.glb",
+      "source": "placeholder (from: 木のカウンター)",
+      "placeholder": true,
+      "fitLongestEdge": 3.2,
+      "rotationDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "floor": {
+      "url": "assets/meshes/floor-paving.placeholder.glb",
+      "source": "placeholder (from: 敷石・土の地面)",
+      "placeholder": true,
+      "fitLongestEdge": 4,
+      "rotationDeg": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    }
+  }
+}

@@ -7,6 +7,7 @@ import { validateWorldConfig } from './validate.js';
 import { validateAgentConfig, type AgentConfig } from './agent.types.js';
 import { validateCommissionConfig, type CommissionConfig } from './commission.types.js';
 import { validateMarketStructureConfig, type MarketStructureConfig } from './market.config.types.js';
+import { validateAssetsConfig, type AssetsConfig } from './assets.types.js';
 import { validatePresentationConfig, type PresentationConfig } from './presentation.types.js';
 import { validatePrivacyConfig, type PrivacyConfig } from './privacy.types.js';
 import { validateVerificationEvidence, type VerificationEvidence } from './verification.types.js';
@@ -142,4 +143,8 @@ export function loadVerificationEvidence(env: NodeJS.ProcessEnv = process.env): 
   path: string;
 } {
   return loadJsonConfig('config/verification-evidence.json', validateVerificationEvidence, env);
+}
+
+export function loadAssetsConfig(env: NodeJS.ProcessEnv = process.env): { value: AssetsConfig; path: string } {
+  return loadJsonConfig('config/assets.config.json', validateAssetsConfig, env);
 }

@@ -1,7 +1,7 @@
 import { collectVerifiedFlags, unconfirmedPresentation, verificationSummary } from '@na/shared';
 import { runCommissionAction } from './commission/actions.js';
 import { createHttpServer } from './http.js';
-import { createRuntime, printStartupLabels, resolveClientDist } from './runtime.js';
+import { createRuntime, printStartupLabels, resolveAssetsDir, resolveClientDist } from './runtime.js';
 
 /** tick の実時間間隔【仮値】。市場が勝手に動く速さ。 */
 const TICK_INTERVAL_MS = 1000;
@@ -13,6 +13,7 @@ function main(): void {
   const port = Number(runtime.env.get('NA_SERVER_PORT'));
   const serveClient = runtime.env.get('NA_SERVE_CLIENT') === '1';
   const clientDist = serveClient ? resolveClientDist() : undefined;
+  const assetsDir = serveClient ? resolveAssetsDir() : undefined;
 
   const server = createHttpServer({
     config: runtime.config,
@@ -79,6 +80,15 @@ function main(): void {
       config: runtime.renderConfig,
       unconfirmed: unconfirmedPresentation(runtime.renderConfig),
       tuning: runtime.renderConfig.tuning,
+      assets: {
+        generator: runtime.assetsConfig.generator,
+        license: runtime.assetsConfig.license,
+        polyBudget: runtime.assetsConfig.polyBudget,
+        costMeasured: runtime.assetsConfig.budget.measuredCostPerMeshUsd !== null,
+        assignedMeshes: Object.entries(runtime.renderConfig.assets.meshes)
+          .filter(([, m]) => m.url !== '')
+          .map(([slot, m]) => ({ slot, placeholder: m.placeholder, source: m.source })),
+      },
       notes: {
         scope:
           '方向（ウルの形＋Donwood の暗い質感）は確定。色・強度は一次案（要調整）で、確定は加藤さんが実参照から行う',
@@ -120,6 +130,7 @@ function main(): void {
     }),
     port,
     clientDist,
+    assetsDir,
   });
 
   const timer = setInterval(() => runtime.sim.step(), TICK_INTERVAL_MS);

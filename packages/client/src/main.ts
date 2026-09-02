@@ -19,6 +19,8 @@ import { PresentationLayer } from './presentation/index.js';
 import { fetchPresentationConfig, initialMode, unconfirmedList } from './presentation/config.js';
 import { isFirstPass } from '@na/shared';
 import { stallMaterial } from './presentation/materials.js';
+import { loadAssignedMeshes, MESH_TRIANGLE_BUDGET, type LoadedMesh } from './presentation/meshes.js';
+import { assignedMeshSlots, type MaterialSlotId } from '@na/shared';
 
 /**
  * M2: 歩けるグレイボックス・クライアント。
@@ -44,6 +46,10 @@ interface DebugHandle {
   contextLost: () => boolean;
   renderMode: () => string;
   setRenderMode: (mode: 'greybox' | 'stylized') => void;
+  assetsEnabled: () => boolean;
+  setAssets: (on: boolean) => void;
+  meshReport: () => { slot: string; triangles: number; reducedTriangles: number; placeholder: boolean }[];
+  meshFailures: () => { slot: string; url: string; error: string }[];
   postPasses: () => string[];
   frameStats: () => { averageMs: number; budgetMs: number; exceeded: boolean };
   unconfirmedPresentation: () => string[];
@@ -127,6 +133,43 @@ async function main(): Promise<void> {
   });
   const built = buildScene({ layout, gateSpecs, materials: layer.materials, presentation });
 
+  // 生成メッシュ（割り当てがあれば）。マテリアルは stylized を掛ける（stylize-on-top）。
+  const meshMaterialFor = (slot: MaterialSlotId): THREE.Material => {
+    const set = layer.materials;
+    switch (slot) {
+      case 'floor': return set.floor;
+      case 'wall': return set.wall;
+      case 'stall': return set.stallWood;
+      case 'counter': return set.counter;
+      case 'gate': return set.gateClosed;
+      default: return set.wall;
+    }
+  };
+  let meshesBySlot = new Map<MaterialSlotId, LoadedMesh>();
+  let meshFailures: { slot: string; url: string; error: string }[] = [];
+  let assetsOn = assignedMeshSlots(presentation).length > 0;
+  const reloadMeshes = async (): Promise<void> => {
+    if (assignedMeshSlots(presentation).length === 0) {
+      meshesBySlot = new Map();
+      return;
+    }
+    const report = await loadAssignedMeshes(presentation, meshMaterialFor);
+    meshesBySlot = new Map(report.loaded.map((m) => [m.slot, m]));
+    meshFailures = report.failures;
+    // 生成物が予算超過なら隠さず出す。
+    for (const m of report.loaded) {
+      if (m.reducedTriangles > MESH_TRIANGLE_BUDGET) {
+        showError(`[assets] ${m.slot} が予算超過: ${m.reducedTriangles} > ${MESH_TRIANGLE_BUDGET} tri`);
+      }
+    }
+    for (const f of report.failures) {
+      showError(`[assets] ${f.slot} のメッシュを読めない: ${f.error}`);
+    }
+    built.applyMeshes(meshesBySlot, assetsOn);
+  };
+  await reloadMeshes();
+  built.applyMeshes(meshesBySlot, assetsOn);
+
   const camera = new THREE.PerspectiveCamera(
     GREYBOX.camera.fov,
     window.innerWidth / window.innerHeight,
@@ -145,9 +188,22 @@ async function main(): Promise<void> {
 
   // greybox ↔ stylized のトグル。greybox 経路は消さない（比較・デバッグ用）。
   window.addEventListener('keydown', (event) => {
-    if (event.code !== 'KeyP') return;
-    const next = layer.mode === 'greybox' ? 'stylized' : 'greybox';
-    built.applyMaterials(layer.swapMode(next), focused?.slot.categoryId ?? null);
+    if (event.code === 'KeyP') {
+      const next = layer.mode === 'greybox' ? 'stylized' : 'greybox';
+      built.applyMaterials(layer.swapMode(next), focused?.slot.categoryId ?? null);
+      // メッシュも新しいマテリアルへ差し直す（stylize-on-top を保つ）。
+      for (const m of meshesBySlot.values()) {
+        m.object.traverse((node) => {
+          const mesh = node as THREE.Mesh;
+          if (mesh.isMesh) mesh.material = meshMaterialFor(m.slot);
+        });
+      }
+      return;
+    }
+    if (event.code === 'KeyM') {
+      assetsOn = !assetsOn;
+      built.applyMeshes(meshesBySlot, assetsOn);
+    }
   });
 
   const controller = new FirstPersonController({
@@ -247,6 +303,12 @@ async function main(): Promise<void> {
         stats: layer.stats(),
         unconfirmed: unconfirmedList(presentation),
         firstPass: isFirstPass(presentation),
+        assets: {
+          on: assetsOn,
+          meshes: meshesBySlot.size,
+          placeholders: [...meshesBySlot.values()].filter((m) => m.placeholder).length,
+          failures: meshFailures.length,
+        },
       },
       world,
       session,
@@ -282,6 +344,19 @@ async function main(): Promise<void> {
       const materials = layer.swapMode(mode);
       built.applyMaterials(materials, focused?.slot.categoryId ?? null);
     },
+    assetsEnabled: () => assetsOn,
+    setAssets: (on: boolean) => {
+      assetsOn = on;
+      built.applyMeshes(meshesBySlot, assetsOn);
+    },
+    meshReport: () =>
+      [...meshesBySlot.values()].map((m) => ({
+        slot: m.slot,
+        triangles: m.triangles,
+        reducedTriangles: m.reducedTriangles,
+        placeholder: m.placeholder,
+      })),
+    meshFailures: () => meshFailures,
     postPasses: () => layer.passIds,
     frameStats: () => layer.stats(),
     unconfirmedPresentation: () => unconfirmedList(presentation),

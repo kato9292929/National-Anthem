@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
+  assignedMeshSlots,
   isFirstPass,
   MATERIAL_SLOT_IDS,
   POST_PASS_IDS,
@@ -27,8 +28,13 @@ test('見た目は一次案のまま（方向は確定・値は要調整）', ()
     'performance',
     'postprocess',
   ]);
-  assert.deepEqual(config.assets.textures, {}, 'アセットの受け口は空のまま');
-  assert.deepEqual(config.assets.meshes, {});
+  assert.deepEqual(config.assets.textures, {}, 'テクスチャの受け口は空のまま');
+  // メッシュはスロットごとに埋まるが、既定はすべて未割り当て（url 空）。
+  for (const slot of MATERIAL_SLOT_IDS) {
+    assert.equal(config.assets.meshes[slot].url, '', `${slot} に既定でメッシュが入っている`);
+    assert.equal(config.assets.meshes[slot].placeholder, false);
+  }
+  assert.equal(assignedMeshSlots(config).length, 0, '既定で割り当てられたメッシュがある');
 });
 
 test('一次案の芯: posterize → outline → colorGrade → grain の順で積む', () => {
