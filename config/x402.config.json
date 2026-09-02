@@ -2,16 +2,22 @@
   "$comment": "M4 x402 決済。確定値は加藤さん指定。未指定の値は TBD / confirmed:false のまま置き、使おうとしたら落とす。",
   "version": "0",
   "protocol": {
-    "$comment": "native withX402 v2。402 は PAYMENT-REQUIRED ヘッダで来て body は {}。top-level に x402Version:2。v2 の leg は amount。 402 の有効期限がどのフィールドで来るかは未確定（legExpiryField は仮）。",
+    "$comment": "稼働プロダクト（X-alpha / OSD / AA）の実装から取った実ワイヤ。scheme は exact。402 は PAYMENT-REQUIRED ヘッダ（base64）＋ body {}、top-level x402Version:2。支払いヘッダは PAYMENT-SIGNATURE、settle 応答は PAYMENT-RESPONSE。accepts は v1 leg（network \"solana\" / maxAmountRequired）と v2 leg（CAIP-2 / amount）を併記する。出どころは docs/x402-wire-contract.md。",
     "x402Version": 2,
-    "scheme": "native",
+    "scheme": "exact",
     "requirementsHeader": "PAYMENT-REQUIRED",
-    "paymentHeader": "X-PAYMENT",
-    "paymentResponseHeader": "X-PAYMENT-RESPONSE",
+    "paymentHeader": "PAYMENT-SIGNATURE",
+    "paymentResponseHeader": "PAYMENT-RESPONSE",
     "legAmountField": "amount",
     "confirmed": true,
     "legExpiryField": "expiresAt",
-    "legExpiryConfirmed": false
+    "legExpiryConfirmed": false,
+    "legAmountFieldV1": "maxAmountRequired",
+    "supportedPath": "/supported",
+    "verifyPath": "/verify",
+    "settlePath": "/settle",
+    "maxTimeoutSeconds": 300,
+    "mimeType": "application/json"
   },
   "facilitator": {
     "url": "https://facilitator.payai.network",
@@ -20,9 +26,10 @@
     "verified": false
   },
   "feePayer": {
-    "$comment": "feePayer は 402 の accepts[].extra.feePayer から毎回取る。ローテートする値なので config に持たない・キャッシュしない。",
+    "$comment": "feePayer は facilitator の /supported から毎回取る（PayAI はローテートする）。config には持たない。取得できないときは accepts を空にせず、feePayer 無しのまま返す。",
     "source": "response.accepts[].extra.feePayer",
-    "hardcodedAllowed": false
+    "hardcodedAllowed": false,
+    "ttlMs": 300000
   },
   "rails": [
     {
@@ -37,13 +44,14 @@
       "confirmed": true,
       "verified": false,
       "eip712Domain": null,
-      "requiresFeePayer": true
+      "requiresFeePayer": true,
+      "networkV1": "solana"
     },
     {
       "id": "base",
       "chainKind": "evm",
-      "network": "TBD",
-      "asset": "TBD",
+      "network": "eip155:8453",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       "assetLabel": "USDC",
       "decimals": 6,
       "payTo": "TBD",
@@ -53,9 +61,12 @@
       "eip712Domain": {
         "name": "USD Coin",
         "version": "2",
+        "chainId": 8453,
         "confirmed": true
       },
-      "requiresFeePayer": false
+      "requiresFeePayer": false,
+      "$comment": "network と asset は稼働コードから確認済み（OSD lib/x402.ts）。payTo は National Anthem 用が未指定なので TBD のまま。",
+      "networkV1": "base"
     },
     {
       "id": "evm-secondary",
@@ -69,7 +80,8 @@
       "confirmed": false,
       "verified": false,
       "eip712Domain": null,
-      "requiresFeePayer": false
+      "requiresFeePayer": false,
+      "networkV1": "TBD"
     }
   ],
   "policy": {

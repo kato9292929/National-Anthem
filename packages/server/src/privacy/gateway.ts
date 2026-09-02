@@ -90,6 +90,21 @@ export function createHttpMxeClient(url: string, fetchImpl: typeof fetch = fetch
   };
 }
 
+/**
+ * 検証を別の口（facilitator 等）に委ねる MXE。
+ * 実 MXE が無い間も「常に true」ではなく、実際の検証結果を bool にして返す。
+ * 外に出るのは payment_valid だけ、という契約はここでも保つ。
+ */
+export function createDelegatingMxe(
+  id: string,
+  verify: (input: { payload: Record<string, unknown>; leg: PaymentLeg }) => Promise<boolean>,
+): MxeClient {
+  return {
+    id,
+    verify: async (input) => ({ payment_valid: await verify(input) }),
+  };
+}
+
 /** 区分A の結線確認用の stub。bool を返すだけで、入力は外に出さない。 */
 export function createMockMxe(decide: (input: { leg: PaymentLeg }) => boolean = () => true): MxeClient {
   return {

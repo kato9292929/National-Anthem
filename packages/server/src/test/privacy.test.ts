@@ -19,6 +19,7 @@ const leg: PaymentLeg = {
   network: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
   asset: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
   amount: '10000',
+  legVersion: 2,
   payTo: '4s8XQC2WzRfgH8Xiep7ybnCW11VKRCMwxQF6jknx3VPf',
 };
 

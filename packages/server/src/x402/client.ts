@@ -133,16 +133,23 @@ export function parseRequirements(response: Response, config: X402Config): Payme
   };
 }
 
+/**
+ * accepts の 1 件を読む。
+ * 稼働プロダクトの 402 は v1 leg（maxAmountRequired）と v2 leg（amount）を併記するので、
+ * v1 leg は「読めない」ではなく「v1 として読む」。払う leg の選択は selectLeg 側で行う。
+ */
 function normalizeLeg(input: unknown, index: number, config: X402Config): PaymentLeg {
   if (typeof input !== 'object' || input === null) {
     throw new X402Error(`accepts[${index}] がオブジェクトでない`);
   }
   const leg = input as Record<string, unknown>;
   const amountField = config.protocol.legAmountField;
-  if (leg[amountField] === undefined) {
-    const hint = leg['maxAmountRequired'] !== undefined ? '（maxAmountRequired が来ている。v1 の形）' : '';
-    throw new X402Error(`accepts[${index}] に ${amountField} が無い${hint}`);
+  const v1Field = config.protocol.legAmountFieldV1;
+  const rawAmount = leg[amountField] ?? leg[v1Field];
+  if (rawAmount === undefined) {
+    throw new X402Error(`accepts[${index}] に ${amountField} も ${v1Field} も無い`);
   }
+  const legVersion: 1 | 2 = leg[amountField] === undefined ? 1 : 2;
   for (const key of ['scheme', 'network', 'asset', 'payTo'] as const) {
     if (typeof leg[key] !== 'string' || leg[key] === '') {
       throw new X402Error(`accepts[${index}].${key} が空`);
@@ -152,7 +159,8 @@ function normalizeLeg(input: unknown, index: number, config: X402Config): Paymen
     scheme: leg['scheme'] as string,
     network: leg['network'] as string,
     asset: leg['asset'] as string,
-    amount: String(leg[amountField]),
+    amount: String(rawAmount),
+    legVersion,
     payTo: leg['payTo'] as string,
     ...(typeof leg['resource'] === 'string' ? { resource: leg['resource'] } : {}),
     ...(typeof leg['description'] === 'string' ? { description: leg['description'] } : {}),
@@ -210,6 +218,11 @@ export function selectLeg(
 ): SelectedLeg {
   const reasons: string[] = [];
   for (const leg of requirements.accepts) {
+    if (leg.legVersion === 1) {
+      // v1 leg は併記されているだけ。v2 で払う。
+      reasons.push(`${leg.network}: v1 leg（${config.protocol.legAmountFieldV1}）なので選ばない`);
+      continue;
+    }
     const rail = config.rails.find((r) => r.network === leg.network && r.asset === leg.asset);
     if (!rail) {
       reasons.push(`${leg.network} / ${leg.asset}: 対応する rail が config に無い`);

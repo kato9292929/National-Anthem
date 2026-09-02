@@ -12,6 +12,7 @@
 | `config/` | world 以外の設定（identity・room・市場構造・x402・privacy・agent・commission・presentation）。ソースにリテラルを書かない |
 | `packages/client/src/presentation/` | 見た目の受け口（マテリアルのスロット・シェーダ・ポスプロ pipeline）。色や強度は config から差す |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
+| `docs/x402-wire-contract.md` | x402 の実ワイヤ（稼働プロダクト X-alpha / OSD / AA からの引き写し・出どころ付き） |
 | `docs/verification-b-runbook.md` | 区分B の実確認ランブック（段ごとに要る鍵・ネットワーク・仕様と、現状の詰まり） |
 | `docs/commission-flow-options.md` | commission_flow の選択肢（設計のみ・未確定。実装はしていない） |
 | `docs/world-spec-v0.md` | 世界設定スペック v0（正典）。差別化指示書 §3「世界設定と固有名」と「経済の重心」の確定分 |
@@ -107,19 +108,21 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 `UnbackedVerificationError` として落ちる。証拠の書き方と target の対応表は
 `docs/verification-b-runbook.md`。
 
-### 区分B の現況: 4 段すべて未消化（`verified` は全件 `false`）
+### 区分B の現況: 5 段すべて未消化（`verified` は全件 `false`）
 
 `npm run verify:b` をこの開発環境で実行した結果。証拠レコードは 0 件。
+**仕様の欠けは稼働プロダクトからの引き写しでほぼ解消**した（`docs/x402-wire-contract.md`）。
+残るのは鍵・ネットワークと、下の 2 点。
 
 | 段 | 状態 | 止まっている理由 |
 | --- | --- | --- |
-| 2. 実署名 | blocked | 鍵（`NA_WALLET_PRIVATE_KEY`）未設定。加えて **X-PAYMENT payload の形・Base の署名方式・chainId・verifyingContract・DCW 署名 API の形が未指定**。推測で埋めると偽署名になるので実装していない |
-| 1. 実 facilitator・実着金 | blocked | 開発環境の egress allowlist に `facilitator.payai.network` が無く 403。**402 を返す実リソースのエンドポイントも未指定**。2 が前提 |
-| 3. 実 MXE | blocked | `NA_ARCIUM_CLUSTER_URL` 未設定。**検証回路の呼び出し形が未指定**。Gateway 側の受け口（`payment_valid` のみ受ける・アドレスを残さない）は実装済み |
-| 4. 実 identity | blocked | **ERC-8004 レジストリのアドレスと ABI、チェーン RPC、DCW の wallet API の形が未指定**。agentId と DCW アドレスは config に入っている |
+| 2. 実署名 | blocked | `NA_SOLANA_PRIVATE_KEY` 未設定。仕様は解消（公式 SDK に委ねる） |
+| 1. 実 facilitator・実着金（Solana） | blocked | egress が facilitator を 403／`NA_X402_PAYWALL` 未設定。資源は自前のエンドポイントで用意済み |
+| 1b. Base レールの着金 | blocked | `NA_EVM_PRIVATE_KEY` 未設定／egress／**Base の payTo（受取先）が未指定** |
+| 3. 実 MXE | blocked | 鍵・URL 未設定。加えて**実 MXE 計算の呼び出し形は Arcium リポジトリでも未実装**（real path は NotImplemented・実計算は on-chain キュー＋callback） |
+| 4. 実 identity | blocked | `NA_BASE_RPC_URL` 未設定。レジストリのアドレスと ABI は解消（`0x8004A169…a432` / chainId 8453） |
 
-この環境は外向きが allowlist 制で、facilitator / Solana RPC / Base RPC / Circle API はいずれも 403。
-鍵も入っていない。**したがって tx ハッシュも実アドレスも記録できていない。**
+**したがって tx ハッシュも実アドレスも記録できていない。**
 必要な入力が揃った環境で `npm run verify:b` を回すと、通った段の証拠だけが記録される。
 
 ### 未検証（区分B）の一覧（すべて未消化）
@@ -139,8 +142,17 @@ M0〜M2 は LLM も決済も呼ばない。課金要素ゼロ。
 
 ## x402（M4）
 
-native withX402 v2。402 は `PAYMENT-REQUIRED` ヘッダで来て body は `{}`、top-level に `x402Version: 2`、
-leg は `amount`。確定値は `config/x402.config.json` に置き、ソースにリテラルを書かない。
+**稼働プロダクト（X-alpha / OSD / AA）の実ワイヤに合わせてある**（出どころ付きの一覧は
+`docs/x402-wire-contract.md`）。scheme は `exact`、402 は `PAYMENT-REQUIRED` ヘッダで来て body は `{}`、
+top-level に `x402Version: 2`、支払いは `PAYMENT-SIGNATURE`、settle 結果は `PAYMENT-RESPONSE`。
+`accepts` は v1 leg（`solana` / `maxAmountRequired`）と v2 leg（CAIP-2 / `amount`）を併記し、払うのは v2 leg。
+確定値は `config/x402.config.json` に置き、ソースにリテラルを書かない。
+
+- **払う側は自前で署名 payload を組まない。** 公式 SDK（`@x402/fetch` + `@x402/evm` + `@x402/svm`）に委ねる
+  （`packages/server/src/x402/sdk-payer.ts`）。鍵が無ければ作らず落ちる。
+- **払う先の資源は自前のエンドポイント。** 委託の封印精算と物販の購入を 402 でゲートする
+  （`NA_X402_PAYWALL=1`）。検証は privacy Gateway 経由（`payment_valid` のみ）、settle は facilitator。
+  **検証も settle もできない状態ではゲートを開けない**（起動時に落とす）。
 
 - **feePayer はハードコードしない。** 402 の `accepts[].extra.feePayer` から毎回読む。
   config に置くと検証で落ちる（`feePayer.hardcodedAllowed: false`、rails に `feePayer` キーがあれば例外）。

@@ -24,6 +24,11 @@ async function withServer<T>(fn: (base: string, sim: MarketSimulation) => Promis
     roomsConfig,
     localPlayerId,
     x402Status: () => ({ mode: 'unavailable' }),
+    paywall: {
+      enabled: false,
+      headerName: 'PAYMENT-SIGNATURE',
+      guard: () => Promise.resolve({ kind: 'disabled' as const }),
+    },
     privacyStatus: () => ({ mode: 'mock' }),
     agentStatus: () => ({ gate: { satisfied: false } }),
     adapterStatus: () => ({ adapters: [] }),

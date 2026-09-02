@@ -35,8 +35,11 @@ import { evaluateGates, type GateResult } from './agent/gate.js';
 import { CommissionBoard } from './commission/board.js';
 import { GoodsStorefront } from './commission/storefront.js';
 import { loadMeasurement } from './agent/dry-run.js';
-import { createHttpMxeClient, createMockMxe, PrivateGateway } from './privacy/gateway.js';
+import { createDelegatingMxe, createHttpMxeClient, createMockMxe, PrivateGateway } from './privacy/gateway.js';
 import { PaymentRecordStore } from './privacy/records.js';
+import { FeePayerResolver } from './x402/challenge.js';
+import { FacilitatorClient } from './x402/facilitator.js';
+import { Paywall } from './x402/paywall.js';
 import { createX402Service, type X402Service } from './x402/service.js';
 import { FileEventLog, MemoryEventLog, type EventLog } from './store/event-log.js';
 import { CURRENT_MILESTONE, loadDotEnv, resolveEnv, type ResolvedEnv } from './env.js';
@@ -58,12 +61,14 @@ export interface Runtime {
   eventLog: EventLog;
   x402Config: X402Config;
   x402: X402Service;
+  /** 我々のエンドポイントを 402 でゲートする口。 */
+  paywall: Paywall;
   privacyConfig: PrivacyConfig;
   evidence: VerificationEvidence;
   gateway: PrivateGateway;
   paymentRecords: PaymentRecordStore;
-  /** 実 MXE に向いているか（未検証）、mock か。 */
-  gatewayMode: 'http' | 'mock';
+  /** 実 MXE に向いているか（未検証）、facilitator 委譲か、結線確認用の stub か。 */
+  gatewayMode: 'http' | 'facilitator' | 'mock';
   agentConfig: AgentConfig;
   agentGate: GateResult;
   adapters: AdapterRegistry;
@@ -105,10 +110,31 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   const x402 = createX402Service(x402Config, process.env);
 
   const privacyConfig = loadPrivacyConfig(process.env).value;
+  // 実 facilitator は env で明示されたときだけ使う。
+  // config の URL は「どこに繋ぐか」の記録であって、既定で繋ぎに行くものではない
+  // （到達できない相手に既定で向けると、開発時の内部フローまで落ちる）。
+  const facilitatorUrl = env.get('NA_X402_FACILITATOR_URL');
   const clusterUrl = env.get('NA_ARCIUM_CLUSTER_URL');
-  const gatewayMode = clusterUrl ? 'http' : 'mock';
+  const facilitatorUrlForGateway = facilitatorUrl;
+  const facilitatorForGateway = facilitatorUrlForGateway ? new FacilitatorClient(facilitatorUrlForGateway) : null;
+  /**
+   * 実 MXE が無い間の検証。常に true を返す stub は使わない
+   * （それで資源のゲートを通すと、払っていない相手を通してしまう）。
+   * facilitator があるならそこへ委ね、無いときだけ結線確認用の stub。
+   */
+  const gatewayMode: 'http' | 'facilitator' | 'mock' = clusterUrl
+    ? 'http'
+    : facilitatorForGateway
+      ? 'facilitator'
+      : 'mock';
   const gateway = new PrivateGateway(
-    clusterUrl ? createHttpMxeClient(clusterUrl) : createMockMxe(),
+    clusterUrl
+      ? createHttpMxeClient(clusterUrl)
+      : facilitatorForGateway
+        ? createDelegatingMxe('facilitator-backed', async ({ payload, leg }) =>
+            (await facilitatorForGateway.verify(payload, leg)).isValid,
+          )
+        : createMockMxe(),
     privacyConfig,
   );
   const paymentRecords = new PaymentRecordStore(eventLog, privacyConfig.recording);
@@ -117,6 +143,8 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   const adapters = createAdapterRegistry({
     facilitatorUrl: env.get('NA_X402_FACILITATOR_URL'),
     mxeUrl: clusterUrl,
+    chainRpcUrl: env.get('NA_BASE_RPC_URL'),
+    erc8004Registry: identityConfig.external_assets.registries.erc8004.find((r) => r.chain === 'base'),
     forceMock: env.get('NA_X402_MOCK') === '1',
   });
 
@@ -125,6 +153,24 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   assertVerifiedHasEvidence({
     flags: collectVerifiedFlags({ identity: identityConfig, x402: x402Config, privacy: privacyConfig }),
     evidence,
+  });
+
+  // 402 でゲートする側。既定は無効（NA_X402_PAYWALL=1 で有効）。
+  const facilitatorClient = facilitatorUrl ? new FacilitatorClient(facilitatorUrl) : null;
+  const paywallRequested = env.get('NA_X402_PAYWALL') === '1';
+  if (paywallRequested && (!facilitatorClient || gatewayMode === 'mock')) {
+    // 検証も settle もできない状態でゲートを開けない（払っていない相手を通さない）。
+    throw new Error(
+      'NA_X402_PAYWALL=1 だが検証・settle の相手がいない。NA_X402_FACILITATOR_URL か NA_ARCIUM_CLUSTER_URL を設定する',
+    );
+  }
+  const paywall = new Paywall({
+    config: x402Config,
+    railId: 'solana',
+    feePayer: new FeePayerResolver(x402Config, facilitatorClient),
+    facilitator: facilitatorClient,
+    gateway,
+    enabled: paywallRequested,
   });
 
   const commissionConfig = loadCommissionConfig(process.env).value;
@@ -154,6 +200,7 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     eventLog,
     x402Config,
     x402,
+    paywall,
     privacyConfig,
     evidence,
     gateway,
@@ -221,7 +268,10 @@ export function printStartupLabels(runtime: Runtime): void {
         .map((r) => `${r.id}(${r.confirmed ? '確定' : 'TBD'}/${r.verified ? '検証済' : '未検証'})`)
         .join(', ') + ` / 署名 mode=${runtime.x402.mode}`,
   );
-  console.log('[x402] feePayer は 402 の extra から毎回取得（config に持たない）');
+  console.log('[x402] feePayer は 402 の /supported から動的取得（config に持たない）');
+  console.log(
+    `[x402] 資源のゲート: ${runtime.paywall.enabled ? '有効（commission settle / storefront buy）' : '無効（NA_X402_PAYWALL=1 で有効）'}`,
+  );
   console.log(
     `[privacy] gateway mode=${runtime.gatewayMode}（実 MXE 投入は未検証・区分B） / ` +
       `返るのは ${runtime.privacyConfig.response.allowedFields.join(', ')} のみ`,

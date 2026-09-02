@@ -18,6 +18,17 @@ export interface HttpOptions {
   agentStatus: () => unknown;
   adapterStatus: () => unknown;
   presentationConfig: () => unknown;
+  /** 402 でゲートする資源。無効なら常に null を返す。 */
+  paywall: {
+    enabled: boolean;
+    /** 支払いヘッダの名前（config 由来）。 */
+    headerName: string;
+    guard(input: { paymentSignature: string | undefined; resource: string; description: string }): Promise<
+      | { kind: 'disabled' }
+      | { kind: 'challenge'; response: { status: number; headers: Record<string, string>; body: string } }
+      | { kind: 'paid'; headers: Record<string, string> }
+    >;
+  };
   commissionBoard: () => unknown;
   commissionAction: (body: Record<string, unknown>) => Promise<unknown>;
   storefrontListing: () => unknown;
@@ -72,6 +83,32 @@ export function createHttpServer(options: HttpOptions) {
     });
   });
 
+  /**
+   * 402 のゲート。gated が true なら 402 を返し終えているので呼び出し側は進まない。
+   * 通った場合は settle 結果のヘッダを返し、200 にも載せる。
+   */
+  async function guardPayment(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    description: string,
+  ): Promise<{ gated: boolean; headers: Record<string, string> }> {
+    if (!options.paywall.enabled) return { gated: false, headers: {} };
+    const raw = req.headers[options.paywall.headerName.toLowerCase()];
+    const paymentSignature = Array.isArray(raw) ? raw[0] : raw;
+    const result = await options.paywall.guard({
+      paymentSignature,
+      resource: url.href,
+      description,
+    });
+    if (result.kind === 'challenge') {
+      res.writeHead(result.response.status, result.response.headers);
+      res.end(result.response.body);
+      return { gated: true, headers: {} };
+    }
+    return { gated: false, headers: result.kind === 'paid' ? result.headers : {} };
+  }
+
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://localhost:${options.port}`);
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -107,7 +144,14 @@ export function createHttpServer(options: HttpOptions) {
 
       case 'POST /api/commission/action': {
         const body = (await readJson(req)) as Record<string, unknown>;
-        sendJson(res, 200, await options.commissionAction(body));
+        // 封印精算は有料の資源。402 でゲートする（払う先の資源＝ここ）。
+        let paymentHeaders: Record<string, string> = {};
+        if (String(body['action'] ?? '') === 'settle') {
+          const gate = await guardPayment(req, res, url, '委託の封印精算');
+          if (gate.gated) return;
+          paymentHeaders = gate.headers;
+        }
+        sendJson(res, 200, await options.commissionAction(body), paymentHeaders);
         return;
       }
 
@@ -117,7 +161,9 @@ export function createHttpServer(options: HttpOptions) {
 
       case 'POST /api/storefront/buy': {
         const body = (await readJson(req)) as Record<string, unknown>;
-        sendJson(res, 200, options.storefrontBuy(body));
+        const gate = await guardPayment(req, res, url, '物販の購入');
+        if (gate.gated) return;
+        sendJson(res, 200, options.storefrontBuy(body), gate.headers);
         return;
       }
 
@@ -211,11 +257,12 @@ function serveStatic(root: string, pathname: string, res: ServerResponse): boole
   return true;
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
+function sendJson(res: ServerResponse, status: number, body: unknown, extraHeaders: Record<string, string> = {}): void {
   const text = JSON.stringify(body);
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(text),
+    ...extraHeaders,
   });
   res.end(text);
 }

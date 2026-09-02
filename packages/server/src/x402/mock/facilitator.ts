@@ -44,6 +44,17 @@ export async function startMockFacilitator(options: MockFacilitatorOptions = {})
       const body = (text === '' ? {} : JSON.parse(text)) as Record<string, unknown>;
       const payload = (body['paymentPayload'] ?? {}) as Record<string, unknown>;
 
+      if (req.url === '/supported') {
+        // PayAI の /supported を模す。feePayer は呼ぶたびにローテートする。
+        const feePayer = feePayers[(feePayerIndex + 1) % feePayers.length]!;
+        send(res, 200, {
+          kinds: [
+            { x402Version: 2, scheme: 'exact', network: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp', extra: { feePayer } },
+          ],
+        });
+        return;
+      }
+
       if (req.url === '/verify') {
         calls.push({ kind: 'verify', body });
         const isValid = accept(payload);

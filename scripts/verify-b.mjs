@@ -30,26 +30,35 @@ const baseRail = x402.rails.find((r) => r.id === 'base');
 const STAGES = [
   {
     id: 'signing',
-    title: '2. 実署名（Circle DCW / 生 keypair）',
+    title: '2. 実署名（公式 SDK / Circle DCW / 生 keypair）',
     targets: ['identity.signers.aa-solana', 'identity.custodial_wallets.dcw-evm-base', 'identity.custodial_wallets.dcw-solana'],
     requires: {
-      env: ['NA_WALLET_PRIVATE_KEY'],
+      // 署名の形は稼働プロダクト（AA）と同じく公式 SDK に委ねる。仕様の欠けは無い。
+      env: ['NA_SOLANA_PRIVATE_KEY'],
       hosts: [],
-      spec: [
-        'X-PAYMENT の payload の形（Solana: 何に署名した何を載せるか）',
-        'Base の署名方式（EIP-3009 / permit のどちらか）と chainId・verifyingContract',
-        'Circle DCW の署名 API の呼び出し形',
-      ],
+      spec: [],
     },
   },
   {
     id: 'settlement',
     title: '1. 実 facilitator 疎通と実レール着金',
-    targets: ['x402.facilitator', 'x402.rails.solana', 'x402.rails.base'],
+    targets: ['x402.facilitator', 'x402.rails.solana'],
     requires: {
-      env: [],
+      // 払う先の資源は National Anthem 自身のエンドポイント（NA_X402_PAYWALL=1 でゲート）。
+      env: ['NA_X402_PAYWALL'],
       hosts: [x402.facilitator.url],
-      spec: ['402 を返す実リソースのエンドポイント（支払い先の資源が未指定）'],
+      spec: [],
+      stages: ['signing'],
+    },
+  },
+  {
+    id: 'settlement-base',
+    title: '1b. Base レールの着金',
+    targets: ['x402.rails.base'],
+    requires: {
+      env: ['NA_EVM_PRIVATE_KEY'],
+      hosts: [x402.facilitator.url],
+      spec: baseRail.payTo === 'TBD' ? ['Base の payTo（National Anthem 用の受取先）が未指定'] : [],
       stages: ['signing'],
     },
   },
@@ -58,9 +67,13 @@ const STAGES = [
     title: '3. 実 Arcium MXE 投入と実 RPC',
     targets: ['privacy.gateway'],
     requires: {
-      env: ['NA_ARCIUM_CLUSTER_URL'],
+      env: ['NA_ARCIUM_CLUSTER_URL', 'NA_ARCIUM_MXE_ID'],
       hosts: [],
-      spec: ['MXE クラスタの URL と、検証回路の呼び出し形'],
+      spec: [
+        '実 MXE 計算の呼び出し形（Arcium リポジトリでも real path は未実装。' +
+          'gateway/src/lib/arcium.ts に「real path は NotImplemented、実計算は on-chain キュー＋callback/polling で、' +
+          '同期的な executeMXE は無い」と書かれている。@arcium-hq/client での実装が要る）',
+      ],
     },
   },
   {
@@ -68,13 +81,10 @@ const STAGES = [
     title: '4. 実 identity（ERC-8004 照会 / Circle DCW wallet 発行）',
     targets: ['identity.erc8004.base', 'identity.erc8004.arc-testnet'],
     requires: {
-      env: [],
+      env: ['NA_BASE_RPC_URL'],
       hosts: [],
-      spec: [
-        'ERC-8004 レジストリのコントラクトアドレスと照会関数の ABI',
-        'チェーン RPC エンドポイント（Base / Arc Testnet）',
-        'Circle DCW の wallet 照会・発行 API の呼び出し形',
-      ],
+      // レジストリのアドレスと ABI は稼働コードから取り込み済み（config + adapters/erc8004.ts）。
+      spec: [],
     },
   },
 ];
@@ -133,7 +143,11 @@ async function main() {
   console.log('[verify:b] 区分B の実確認ハーネス（実装完了では verified を上げない）');
   console.log(`[verify:b] facilitator: ${x402.facilitator.url}`);
   console.log(`[verify:b] payTo(solana): ${solanaRail.payTo} / asset: ${solanaRail.asset}`);
-  console.log(`[verify:b] Base EIP-712 domain: name=${baseRail.eip712Domain.name} version=${baseRail.eip712Domain.version}`);
+    console.log(
+    `[verify:b] Base: network=${baseRail.network} asset=${baseRail.asset} payTo=${baseRail.payTo} ` +
+      `EIP-712 name=${baseRail.eip712Domain.name} version=${baseRail.eip712Domain.version} chainId=${baseRail.eip712Domain.chainId}`,
+  );
+  console.log(`[verify:b] scheme=${x402.protocol.scheme} / 支払いヘッダ=${x402.protocol.paymentHeader}`);
   console.log(
     `[verify:b] ERC-8004: ${identity.external_assets.erc8004.map((e) => `${e.chain}#${e.agentId}`).join(', ')}`,
   );

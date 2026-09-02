@@ -1,3 +1,4 @@
+import type { Erc8004Registry } from '@na/shared';
 import type { AdapterStatus, ChainAdapter, CustodialWalletAdapter, Erc8004Adapter, FacilitatorAdapter, MxeAdapter } from './types.js';
 import {
   mockChainAdapter,
@@ -6,6 +7,7 @@ import {
   mockFacilitatorAdapter,
   mockMxeAdapter,
 } from './mock.js';
+import { createErc8004Adapter } from './erc8004.js';
 import {
   liveFacilitatorAdapter,
   liveMxeAdapter,
@@ -33,6 +35,8 @@ export interface RegistryEnvView {
   mxeUrl?: string | undefined;
   chainRpcUrl?: string | undefined;
   custodialCredentials?: string | undefined;
+  /** ERC-8004 の照会先。config 側のレジストリ定義と併せて使う。 */
+  erc8004Registry?: Erc8004Registry | undefined;
   /** 区分A の検証で mock を強制する。 */
   forceMock?: boolean;
 }
@@ -43,9 +47,12 @@ export function createAdapterRegistry(env: RegistryEnvView): AdapterRegistry {
   const facilitator =
     !useMock && env.facilitatorUrl ? liveFacilitatorAdapter(env.facilitatorUrl) : mockFacilitatorAdapter(env.facilitatorUrl ?? 'http://mock.invalid');
   const mxe = !useMock && env.mxeUrl ? liveMxeAdapter(env.mxeUrl) : mockMxeAdapter();
+  // レジストリのアドレスと ABI は確定済み（稼働コード由来）。残るのは RPC だけ。
   const erc8004 = useMock
     ? mockErc8004Adapter()
-    : unconfiguredErc8004Adapter(['チェーン RPC エンドポイント', 'ERC-8004 レジストリの呼び出し形']);
+    : env.chainRpcUrl && env.erc8004Registry
+      ? createErc8004Adapter({ registry: env.erc8004Registry, rpcUrl: env.chainRpcUrl })
+      : unconfiguredErc8004Adapter(['NA_BASE_RPC_URL（レジストリのアドレスと ABI は確定済み）']);
   const custodialWallet = useMock
     ? mockCustodialWalletAdapter()
     : unconfiguredCustodialWalletAdapter(['Circle DCW の資格情報', 'API の呼び出し形']);

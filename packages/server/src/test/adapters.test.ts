@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { AdapterNotConfiguredError } from '../adapters/types.js';
+import { loadIdentityConfig } from '@na/shared/node';
 import { createAdapterRegistry } from '../adapters/registry.js';
+
+const identityConfig = loadIdentityConfig({}).value;
 import {
   mockChainAdapter,
   mockCustodialWalletAdapter,
@@ -43,6 +46,20 @@ test('mock はもっともらしい偽値を返さない（mock: を残し onCha
   });
 });
 
+test('レジストリのアドレスと ABI は確定済み（残るのは RPC だけ）', () => {
+  const registry = identityConfig.external_assets.registries.erc8004.find((r) => r.chain === 'base');
+  assert.ok(registry, 'Base のレジストリ定義が config に無い');
+  assert.equal(registry.address, '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432');
+  assert.equal(registry.chainId, 8453);
+  assert.equal(registry.confirmed, true, 'アドレスは稼働コードから確認済み');
+  assert.equal(registry.verified, false, '実照会はまだ通っていない');
+
+  // RPC を渡せば live に向く（実照会が通るまで verified は false）。
+  const live = createAdapterRegistry({ chainRpcUrl: 'https://base.invalid', erc8004Registry: registry }).erc8004.status();
+  assert.equal(live.mode, 'live');
+  assert.equal(live.verified, false);
+});
+
 test('未接続の口は呼ばれたら落ちる。何が要るかをメッセージに載せる', async () => {
   const registry = createAdapterRegistry({});
   await assert.rejects(
@@ -50,7 +67,7 @@ test('未接続の口は呼ばれたら落ちる。何が要るかをメッセ�
     (error: unknown) => {
       assert.ok(error instanceof AdapterNotConfiguredError);
       assert.match(error.message, /区分B/);
-      assert.match(error.message, /ERC-8004 レジストリの呼び出し形/);
+      assert.match(error.message, /NA_BASE_RPC_URL/);
       return true;
     },
   );

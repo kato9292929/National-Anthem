@@ -48,6 +48,7 @@ export async function runCommissionAction(input: {
           network: 'internal',
           asset: 'internal',
           amount: commission.amount,
+          legVersion: 2,
           payTo: 'internal',
         },
       });

@@ -19,11 +19,16 @@ import { MockPaymentSigner, unavailableSigner } from '../x402/signer.js';
 const config = loadX402Config({}).value;
 const solanaRail = config.rails.find((r) => r.id === 'solana')!;
 
-test('確定値が config どおりに入っている', () => {
+test('確定値が config どおりに入っている（稼働プロダクトの実ワイヤ）', () => {
   assert.equal(config.protocol.x402Version, 2);
-  assert.equal(config.protocol.scheme, 'native');
+  // scheme は exact（X-alpha / OSD の実 402）。
+  assert.equal(config.protocol.scheme, 'exact');
   assert.equal(config.protocol.requirementsHeader, 'PAYMENT-REQUIRED');
+  assert.equal(config.protocol.paymentHeader, 'PAYMENT-SIGNATURE');
+  assert.equal(config.protocol.paymentResponseHeader, 'PAYMENT-RESPONSE');
   assert.equal(config.protocol.legAmountField, 'amount');
+  assert.equal(config.protocol.legAmountFieldV1, 'maxAmountRequired');
+  assert.equal(config.protocol.maxTimeoutSeconds, 300);
   assert.equal(config.facilitator.url, 'https://facilitator.payai.network');
   assert.equal(config.facilitator.verified, false, '実 facilitator 疎通は区分B');
   assert.equal(solanaRail.asset, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
@@ -32,10 +37,16 @@ test('確定値が config どおりに入っている', () => {
   assert.equal(solanaRail.defaultAmount, '10000', '0.01 USDC = 10000（6 桁）');
   assert.equal(solanaRail.decimals, 6);
 
+  assert.equal(solanaRail.networkV1, 'solana', 'v1 leg の network 名');
+
   const base = config.rails.find((r) => r.id === 'base')!;
   assert.equal(base.eip712Domain?.name, 'USD Coin', '"USDC" にしない');
   assert.equal(base.eip712Domain?.version, '2');
-  assert.equal(base.confirmed, false, 'Base の payTo / asset は未確定なので TBD のまま');
+  assert.equal(base.eip712Domain?.chainId, 8453);
+  assert.equal(base.network, 'eip155:8453');
+  assert.equal(base.asset, '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
+  assert.equal(base.payTo, 'TBD', 'Base の payTo は National Anthem 用が未指定');
+  assert.equal(base.confirmed, false, 'payTo が埋まるまで rail は未確定');
 });
 
 test('feePayer は config に持たない（ハードコード禁止）', () => {
@@ -130,6 +141,7 @@ test('資産が違うレールへ振り替えない（bridge しない）', () =
     network: 'eip155:8453',
     asset: '0xUSDC',
     amount: '10000',
+    legVersion: 2,
     payTo: '0xsomewhere',
   };
   const signers = [new MockPaymentSigner('solana', ['solana'])];
@@ -152,14 +164,33 @@ test('未確定レールの署名口は黙って通らず落ちる', async () =>
   );
 });
 
-test('v1 の形（maxAmountRequired）は v2 として受け取らない', () => {
-  const response = fakeResponse({
-    'PAYMENT-REQUIRED': encodeHeader({
-      x402Version: 2,
-      accepts: [{ scheme: 'native', network: solanaRail.network, asset: solanaRail.asset, payTo: solanaRail.payTo, maxAmountRequired: '10000' }],
-    }),
-  });
-  assert.throws(() => parseRequirements(response, config), /maxAmountRequired/);
+test('v1 leg は併記として読み、払うのは v2 leg', () => {
+  // 実 402 は v1（network "solana" / maxAmountRequired）と v2（CAIP-2 / amount）を併記する。
+  const v1 = {
+    scheme: 'exact',
+    network: solanaRail.networkV1,
+    asset: solanaRail.asset,
+    payTo: solanaRail.payTo,
+    maxAmountRequired: '10000',
+    extra: { feePayer: 'mock:feePayer:Z' },
+  };
+  const v2 = { ...v1, network: solanaRail.network, amount: '10000', maxAmountRequired: undefined };
+  const parsed = parseRequirements(
+    fakeResponse({ 'PAYMENT-REQUIRED': encodeHeader({ x402Version: 2, accepts: [v1, v2] }) }),
+    config,
+  );
+  assert.deepEqual(parsed.accepts.map((leg) => leg.legVersion), [1, 2]);
+  assert.deepEqual(parsed.accepts.map((leg) => leg.amount), ['10000', '10000']);
+
+  const selected = selectLeg(parsed, config, [new MockPaymentSigner('solana', ['solana'])]);
+  assert.equal(selected.leg.legVersion, 2);
+  assert.equal(selected.leg.network, solanaRail.network);
+
+  // v1 leg しか無ければ払わない（v1 で払う実装は持たない）。
+  assert.throws(
+    () => selectLeg({ x402Version: 2, accepts: [parsed.accepts[0]!] }, config, [new MockPaymentSigner('solana', ['solana'])]),
+    /v1 leg/,
+  );
 });
 
 test('x402Version が違う・ヘッダが無い場合は落ちる', () => {
@@ -200,7 +231,7 @@ test('settle が成功しなければ成功として扱わない', async () => {
   // settle 結果そのものを読む側でも、success:false は成功にしない。
   const failed = new Response('{}', {
     status: 200,
-    headers: { 'X-PAYMENT-RESPONSE': encodeHeader({ success: false, errorReason: 'insufficient_funds' }) },
+    headers: { 'PAYMENT-RESPONSE': encodeHeader({ success: false, errorReason: 'insufficient_funds' }) },
   });
   assert.equal(parseSettlement(failed, config).success, false);
 });
@@ -323,6 +354,7 @@ test('複数の leg が来たら、払えるレールだけを選ぶ', () => {
     network: 'eip155:8453',
     asset: '0xUSDC',
     amount: '10000',
+    legVersion: 2,
     payTo: '0xsomewhere',
   };
   const selected = selectLeg({ x402Version: 2, accepts: [evmLeg, baseLeg()] }, config, signers);
@@ -373,7 +405,7 @@ test('settle 応答のヘッダが無い / 壊れていれば成功にしない'
         },
       },
     ),
-    /X-PAYMENT-RESPONSE が無い/,
+    /PAYMENT-RESPONSE が無い/,
   );
 });
 
@@ -383,6 +415,7 @@ function baseLeg(): PaymentLeg {
     network: solanaRail.network,
     asset: solanaRail.asset,
     amount: solanaRail.defaultAmount,
+    legVersion: 2,
     payTo: solanaRail.payTo,
     extra: { feePayer: 'mock:feePayer:Z' },
   };

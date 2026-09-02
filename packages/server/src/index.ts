@@ -21,6 +21,11 @@ function main(): void {
     identity: runtime.identity,
     roomsConfig: runtime.roomsConfig,
     localPlayerId: runtime.localPlayerId,
+    paywall: {
+      enabled: runtime.paywall.enabled,
+      headerName: runtime.x402Config.protocol.paymentHeader,
+      guard: (input) => runtime.paywall.guard(input),
+    },
     x402Status: () => runtime.x402.status(),
     commissionBoard: () => ({
       modules: runtime.commissionConfig.modules,

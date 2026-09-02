@@ -51,12 +51,24 @@ export interface StandingConfig {
   policy: StandingPolicy;
 }
 
+/** ERC-8004 レジストリ（照会の当て先）。 */
+export interface Erc8004Registry {
+  id: string;
+  chain: string;
+  chainId: number;
+  address: string;
+  agentRegistryId: string;
+  confirmed: boolean;
+  verified: boolean;
+}
+
 export interface IdentityConfig {
   version: string;
   external_assets: {
     erc8004: ExternalErc8004[];
     signers: ExternalSigner[];
     custodial_wallets: ExternalCustodialWallet[];
+    registries: { erc8004: Erc8004Registry[] };
   };
   standing: StandingConfig;
   session_wallet: { confirmed: boolean; default_chain: string; rotate_keeps_reputation: boolean };
@@ -126,6 +138,28 @@ export function validateIdentityConfig(input: unknown, source: string): Identity
           verified: bool(o['verified'], source, `external_assets.signers[${i}].verified`),
         };
       }),
+      registries: {
+        erc8004: arr(
+          obj(assets['registries'], source, 'external_assets.registries')['erc8004'],
+          source,
+          'external_assets.registries.erc8004',
+        ).map((v, i) => {
+          const o = obj(v, source, `external_assets.registries.erc8004[${i}]`);
+          return {
+            id: str(o['id'], source, `external_assets.registries.erc8004[${i}].id`),
+            chain: str(o['chain'], source, `external_assets.registries.erc8004[${i}].chain`),
+            chainId: num(o['chainId'], source, `external_assets.registries.erc8004[${i}].chainId`),
+            address: str(o['address'], source, `external_assets.registries.erc8004[${i}].address`),
+            agentRegistryId: str(
+              o['agentRegistryId'],
+              source,
+              `external_assets.registries.erc8004[${i}].agentRegistryId`,
+            ),
+            confirmed: bool(o['confirmed'], source, `external_assets.registries.erc8004[${i}].confirmed`),
+            verified: bool(o['verified'], source, `external_assets.registries.erc8004[${i}].verified`),
+          };
+        }),
+      },
       custodial_wallets: arr(assets['custodial_wallets'], source, 'external_assets.custodial_wallets').map(
         (v, i) => {
           const o = obj(v, source, `external_assets.custodial_wallets[${i}]`);

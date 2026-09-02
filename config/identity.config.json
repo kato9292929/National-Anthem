@@ -47,7 +47,21 @@
         "confirmed": true,
         "verified": false
       }
-    ]
+    ],
+    "registries": {
+      "$comment": "ERC-8004 IdentityRegistry。出どころは kato9292929/x402-Autonomous-Agent- の src/erc8004/contract.ts（Base mainnet で実際に登録に使ったもの）。Arc Testnet 側のレジストリは未確認なので置かない。",
+      "erc8004": [
+        {
+          "id": "base",
+          "chain": "base",
+          "chainId": 8453,
+          "address": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+          "agentRegistryId": "eip155:8453:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+          "confirmed": true,
+          "verified": false
+        }
+      ]
+    }
   },
   "standing": {
     "$comment": "【仮値】standing の重みとしきい値。v0 で未確定。円筒印章の履歴＝押印の蓄積（world-spec §1）。",

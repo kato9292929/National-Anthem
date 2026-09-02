@@ -11,6 +11,8 @@ export type ChainKind = 'solana' | 'evm';
 export interface Eip712Domain {
   name: string;
   version: string;
+  /** 未確認のレールでは null。 */
+  chainId: number | null;
   confirmed: boolean;
 }
 
@@ -29,6 +31,8 @@ export interface RailConfig {
   eip712Domain: Eip712Domain | null;
   /** このレールは 402 の extra.feePayer が必須か。欠けていたら払わずに落とす。 */
   requiresFeePayer: boolean;
+  /** v1 leg の network 名（現行クライアントが掴むのはこちら）。未確定なら "TBD"。 */
+  networkV1: string;
 }
 
 export interface X402Config {
@@ -40,13 +44,22 @@ export interface X402Config {
     paymentHeader: string;
     paymentResponseHeader: string;
     legAmountField: string;
+    /** v1 leg の金額フィールド名。 */
+    legAmountFieldV1: string;
     /** 有効期限がどのフィールドで来るかは未確定。仮のキー名。 */
     legExpiryField: string;
     legExpiryConfirmed: boolean;
+    /** facilitator のパス。 */
+    supportedPath: string;
+    verifyPath: string;
+    settlePath: string;
+    /** accepts の各 leg に載せる値。 */
+    maxTimeoutSeconds: number;
+    mimeType: string;
     confirmed: boolean;
   };
   facilitator: { url: string; provider: string; confirmed: boolean; verified: boolean };
-  feePayer: { source: string; hardcodedAllowed: boolean };
+  feePayer: { source: string; hardcodedAllowed: boolean; ttlMs: number };
   rails: RailConfig[];
   policy: { bridgingAllowed: boolean; railSelection: string };
 }
@@ -56,8 +69,10 @@ export interface PaymentLeg {
   scheme: string;
   network: string;
   asset: string;
-  /** v2 は amount。maxAmountRequired ではない。 */
+  /** v2 は amount、v1 は maxAmountRequired。値は同じで、フィールド名だけが違う。 */
   amount: string;
+  /** どちらの形で来た leg か。1 は併記されているだけで、払うのは 2。 */
+  legVersion: 1 | 2;
   payTo: string;
   resource?: string;
   description?: string;
@@ -116,6 +131,7 @@ export function validateX402Config(input: unknown, source: string): X402Config {
       confirmed: bool(o['confirmed'], source, `rails[${i}].confirmed`),
       verified: bool(o['verified'], source, `rails[${i}].verified`),
       requiresFeePayer: bool(o['requiresFeePayer'], source, `rails[${i}].requiresFeePayer`),
+      networkV1: str(o['networkV1'], source, `rails[${i}].networkV1`),
       eip712Domain:
         domain === null
           ? null
@@ -126,6 +142,10 @@ export function validateX402Config(input: unknown, source: string): X402Config {
                 source,
                 `rails[${i}].eip712Domain.version`,
               ),
+              chainId:
+                obj(domain, source, `rails[${i}].eip712Domain`)['chainId'] === undefined
+                  ? null
+                  : num(obj(domain, source, `rails[${i}].eip712Domain`)['chainId'], source, `rails[${i}].eip712Domain.chainId`),
               confirmed: bool(
                 obj(domain, source, `rails[${i}].eip712Domain`)['confirmed'],
                 source,
@@ -148,6 +168,12 @@ export function validateX402Config(input: unknown, source: string): X402Config {
       paymentHeader: str(protocol['paymentHeader'], source, 'protocol.paymentHeader'),
       paymentResponseHeader: str(protocol['paymentResponseHeader'], source, 'protocol.paymentResponseHeader'),
       legAmountField: str(protocol['legAmountField'], source, 'protocol.legAmountField'),
+      legAmountFieldV1: str(protocol['legAmountFieldV1'], source, 'protocol.legAmountFieldV1'),
+      supportedPath: str(protocol['supportedPath'], source, 'protocol.supportedPath'),
+      verifyPath: str(protocol['verifyPath'], source, 'protocol.verifyPath'),
+      settlePath: str(protocol['settlePath'], source, 'protocol.settlePath'),
+      maxTimeoutSeconds: num(protocol['maxTimeoutSeconds'], source, 'protocol.maxTimeoutSeconds'),
+      mimeType: str(protocol['mimeType'], source, 'protocol.mimeType'),
       legExpiryField: str(protocol['legExpiryField'], source, 'protocol.legExpiryField'),
       legExpiryConfirmed: bool(protocol['legExpiryConfirmed'], source, 'protocol.legExpiryConfirmed'),
       confirmed: bool(protocol['confirmed'], source, 'protocol.confirmed'),
@@ -161,6 +187,7 @@ export function validateX402Config(input: unknown, source: string): X402Config {
     feePayer: {
       source: str(feePayer['source'], source, 'feePayer.source'),
       hardcodedAllowed: false,
+      ttlMs: num(feePayer['ttlMs'], source, 'feePayer.ttlMs'),
     },
     rails,
     policy: {
