@@ -76,12 +76,35 @@ export interface TuningNote {
   note: string;
 }
 
+/**
+ * 背景レイヤー（Marble / Atlas の splat）。
+ * 見た目専用。前景（scene graph・当たり判定・対話）とは融合しない。
+ */
+export interface BackgroundLayerConfig {
+  /** 背景 splat を出すか。無ければ前景だけで動く。 */
+  enabled: boolean;
+  /** splat ファイルの参照（.spz / .ply / .splat / .ksplat / .sog）。空なら未割り当て。 */
+  splatUrl: string;
+  /** 当たり判定の .glb（Collider Builder 出力）。splat とは別物。空なら床/壁は前景側だけ。 */
+  colliderUrl: string;
+  /** ダミー splat か。実物に見せないため必ず持つ。 */
+  placeholder: boolean;
+  /** 背景の配置（前景の奥に置く基準）。 */
+  position: { x: number; y: number; z: number };
+  rotationDeg: { x: number; y: number; z: number };
+  scale: number;
+  /** 前景と同じポスプロ（colorGrade / grain）を背景にも掛けるか。既定は掛けない（加藤さん判断）。 */
+  applyPostprocess: boolean;
+  source: string;
+}
+
 export interface PresentationConfig {
   version: string;
   declared_in: string;
   confirmed: boolean;
   tuning: TuningNote;
   mode: RenderMode;
+  background: BackgroundLayerConfig;
   palette: { confirmed: boolean; colors: Record<string, string> };
   lighting: {
     confirmed: boolean;
@@ -236,6 +259,35 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
       };
     })(),
     mode: oneOf(root['mode'], ['greybox', 'stylized'] as const, source, 'mode'),
+    background: (() => {
+      const bg = obj(root['background'], source, 'background');
+      const pos = obj(bg['position'], source, 'background.position');
+      const rot = obj(bg['rotationDeg'], source, 'background.rotationDeg');
+      const splatUrl = str2(bg['splatUrl'], source, 'background.splatUrl');
+      // url があるのに placeholder 未指定を許さない（実物に見せないため）。
+      if (splatUrl !== '' && bg['placeholder'] === undefined) {
+        throw new Error(`${source}: background に placeholder が無い（ダミーか実物かを明示する）`);
+      }
+      return {
+        enabled: bool(bg['enabled'], source, 'background.enabled'),
+        splatUrl,
+        colliderUrl: str2(bg['colliderUrl'], source, 'background.colliderUrl'),
+        placeholder: bg['placeholder'] === undefined ? false : bool(bg['placeholder'], source, 'background.placeholder'),
+        position: {
+          x: num(pos['x'], source, 'background.position.x'),
+          y: num(pos['y'], source, 'background.position.y'),
+          z: num(pos['z'], source, 'background.position.z'),
+        },
+        rotationDeg: {
+          x: num(rot['x'], source, 'background.rotationDeg.x'),
+          y: num(rot['y'], source, 'background.rotationDeg.y'),
+          z: num(rot['z'], source, 'background.rotationDeg.z'),
+        },
+        scale: num(bg['scale'], source, 'background.scale'),
+        applyPostprocess: bool(bg['applyPostprocess'], source, 'background.applyPostprocess'),
+        source: str2(bg['source'], source, 'background.source'),
+      };
+    })(),
     palette: {
       confirmed: bool(palette['confirmed'], source, 'palette.confirmed'),
       colors: stringMap(palette['colors'], source, 'palette.colors'),
@@ -306,6 +358,11 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
       headlessFrameBudgetMs: num(performance['headlessFrameBudgetMs'], source, 'performance.headlessFrameBudgetMs'),
     },
   };
+}
+
+/** 背景 splat が割り当てられているか。 */
+export function hasBackgroundSplat(config: PresentationConfig): boolean {
+  return config.background.enabled && config.background.splatUrl !== '';
 }
 
 /** 割り当て済みのメッシュスロット（url がある）を返す。 */

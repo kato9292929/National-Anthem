@@ -24,7 +24,8 @@
     "smoke:swap": "node scripts/config-swap-smoke.mjs",
     "verify:b": "node scripts/verify-b.mjs",
     "assets:placeholders": "npm run build -w @na/tools && node packages/tools/dist/make-placeholders.js",
-    "assets:smoke": "node scripts/assets-smoke.mjs"
+    "assets:smoke": "node scripts/assets-smoke.mjs",
+    "bg:smoke": "node scripts/background-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

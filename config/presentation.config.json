@@ -9,6 +9,26 @@
     "note": "v2: 参照イラストからの目視の当たりで hex と実数まで入れた一次値。最終確定は実参照からの eyedropper、または画面を見ての「明るく／暗く」の指示で詰める。"
   },
   "mode": "stylized",
+  "background": {
+    "$comment": "背景レイヤー（Marble / Atlas の splat）。見た目専用で前景とは融合しない。実 splat が入るまで splatUrl 空・enabled:false。実生成は区分B。",
+    "enabled": false,
+    "splatUrl": "",
+    "colliderUrl": "",
+    "placeholder": false,
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": -40
+    },
+    "rotationDeg": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "applyPostprocess": false,
+    "source": ""
+  },
   "palette": {
     "$comment": "【一次案・要調整】base / shadow の対で持つ。shadow は面の陰側の寄せ先。指定のあった wall / floor 以外の *Shadow は base から導出した一次値。低彩度・暖色・暗部は黒寄り。",
     "confirmed": false,

@@ -24,6 +24,7 @@ export interface HudHandles {
       unconfirmed: string[];
       firstPass: boolean;
       assets: { on: boolean; meshes: number; placeholders: number; failures: number };
+      background: { enabled: boolean; on: boolean; placeholder: boolean };
     };
     world: WorldPayload;
     session: SessionPayload | null;
@@ -64,6 +65,7 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
       <div class="row"><span class="dim">render</span><span id="stat-mode"></span></div>
       <div class="row"><span class="dim">post</span><span id="stat-passes"></span></div>
       <div class="row"><span class="dim">assets</span><span id="stat-assets"></span></div>
+      <div class="row"><span class="dim">背景</span><span id="stat-bg"></span></div>
       <div class="row"><span class="dim">budget</span><span id="stat-budget"></span></div>
       <div class="row"><span class="dim">未確定</span><span id="stat-unconfirmed"></span></div>
     </section>
@@ -91,6 +93,10 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
         (presentation.firstPass ? ' <span class="tag">一次案</span>' : '');
       el('stat-passes').textContent = presentation.passes.length > 0 ? presentation.passes.join(',') : 'なし';
       const a = presentation.assets;
+      const bg = presentation.background;
+      el('stat-bg').innerHTML = !bg.enabled
+        ? '<span class="dim">なし (B で切替)</span>'
+        : `${bg.on ? 'splat' : 'off'} <span class="dim">(B)</span>` + (bg.placeholder ? ' <span class="tag">ダミー</span>' : '');
       el('stat-assets').innerHTML = a.meshes === 0
         ? '<span class="dim">greybox のみ (M で切替)</span>'
         : `${a.on ? 'mesh' : 'greybox'} <span class="dim">(M)</span> ${a.meshes}` +

@@ -503,6 +503,28 @@ try {
     await page.evaluate(() => window.__na_debug.setAssets(true));
   }
 
+  // 背景 splat レイヤー（NA_SMOKE_BG=1 のときだけ）。
+  if (process.env.NA_SMOKE_BG === '1') {
+    const status = await page.evaluate(() => window.__na_debug.backgroundStatus());
+    check(status.loaded === true, '背景 splat が読める', status.error ?? 'ok');
+    check(status.placeholder === true, 'ダミー splat はダミーとして扱う（placeholder）');
+    check(
+      (await page.evaluate(() => window.__na_debug.backgroundEnabled())) === true,
+      '背景 splat が前景の奥に立つ',
+    );
+    // 前景の当たりに背景 collider が入る／入らない（collider 無しなら 0）。
+    check(typeof status.colliderBoxes === 'number', 'collider は splat と分けて扱う', `collider ${status.colliderBoxes} 箱`);
+    // トグル: 背景 off → 前景だけ、また on。
+    await page.evaluate(() => window.__na_debug.setBackground(false));
+    await sleep(150);
+    check((await page.evaluate(() => window.__na_debug.backgroundEnabled())) === false, '背景を切ると前景だけで動く');
+    await page.evaluate(() => window.__na_debug.setBackground(true));
+    await sleep(150);
+    await page.evaluate(() => window.__na_debug.moveTo(0, 12));
+    await sleep(300);
+    await page.screenshot({ path: process.env.NA_SMOKE_BG_SHOT ?? 'artifacts/background-splat.png' });
+  }
+
   check(
     (await page.evaluate(() => window.__na_debug.contextLost())) === false,
     'WebGL コンテキストが生きている',

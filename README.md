@@ -13,6 +13,7 @@
 | `packages/client/src/presentation/` | 見た目の受け口（マテリアルのスロット・シェーダ・ポスプロ pipeline・生成メッシュの読み込み）。色や強度は config から差す |
 | `packages/tools/` | 生成アセットのツール（GLB ライタ・placeholder ジェネレータ・生成アダプタ interface） |
 | `assets/meshes/` | 生成メッシュ（現在は placeholder の `.glb`。実物ではない） |
+| `packages/client/src/presentation/background.ts` | 背景 splat レイヤー（Spark 配線・collider 分離・トグル） |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
 | `docs/x402-wire-contract.md` | x402 の実ワイヤ（稼働プロダクト X-alpha / OSD / AA からの引き写し・出どころ付き） |
 | `docs/verification-b-runbook.md` | 区分B の実確認ランブック（段ごとに要る鍵・ネットワーク・仕様と、現状の詰まり） |
@@ -46,6 +47,7 @@ npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し ar
 npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
 npm run assets:placeholders  # 要素種別ごとのダミー .glb を生成（実物ではない）
 npm run assets:smoke      # 生成メッシュのスロット差し替えを一周（区分A）
+npm run bg:smoke          # 背景 splat（Marble/Spark）レイヤーを一周（区分A）
 npm run agent:dry-run     # M6 の dry-run。1 サイクルのトークン量とコストを出す（LLM 呼び出し 0）
 npm run verify:b          # 区分B の実確認ハーネス。通った段だけ証拠を記録する
 
@@ -340,6 +342,33 @@ greybox の箱を生成した実メッシュに差し替える配管。**方針�
 
 **ライセンス**: 無料枠は Tripo が非商用 / Meshy が CC BY。出荷は有料プランで所有権を取るまでしない。
 現在のアセットは placeholder（自前生成の箱・制約なし）。`config/assets.config.json` の `license` に記録。
+
+### 背景 splat（Marble / Atlas ブリッジ）
+
+背景を Gaussian splat（Marble / World Labs）で重ねる。**前景（scene graph・stall・HUD・x402・
+当たり判定・対話）と背景（見た目のみ）は分離**し、融合しない。実 splat の生成は区分B。
+
+| 段 | 中身 | 状態 |
+| --- | --- | --- |
+| スロット | `presentation.background`（config 駆動）: `splatUrl` / `colliderUrl` / 位置・回転・スケール | 済 |
+| Spark 配線 | `@sparkjsdev/spark` の `SparkRenderer` を前景シーンに add、`SplatMesh` を奥に置く。前景の描画ループと共存 | 済（three 0.185 は Spark 2.1 の想定内） |
+| 深度 | Spark が `render(scene, camera)` 内で三角形メッシュと深度合成 → 手前の stall が奥の splat を隠す（背景は常に前景の奥） | 単純ケースは済。複雑な相互遮蔽は**未検証**（後回し） |
+| 当たり判定の分離 | splat には当たりを付けない（見た目専用）。床/壁が要れば Collider Builder の `.glb` を「見えない衝突メッシュ」として別に読み、前景の当たりへ足す | 口は済。splat と collider を混同しない |
+| トグル | `B` キーで背景 on/off。無ければ前景だけで動く。読み込み失敗は画面に出す（成功に見せない） | 済 |
+| 質感の口 | 単一シーン合成なので、stylized のポスプロは背景にも掛かる。**per-layer 除外は未実装**（単一シーンのため）。`applyPostprocess` フラグは記録・表示するが、除外は後回し | 口は済・除外は未実装として明示 |
+| 性能 | 投入後の frame budget を smoke で再計測。前景 4 パス＋splat の重さは実機計測待ち（未検証） | 済（headless の値のみ） |
+
+**ダミーを実物に見せない**: placeholder splat は procedural な点群（`placeholder:procedural`）で、
+`placeholder: true` を config・status・HUD の「ダミー」タグに残す。実 splat（`.spz`/`.ply`/…）は区分B。
+
+`npm run bg:smoke` が placeholder splat を割り当てた config ツリーで一周する
+（Spark が前景と共存・背景は奥・トグル・collider 分離・budget 再計測）。ソース修正ゼロ。
+
+### 未検証（区分B・実機）
+
+- 前景メッシュ＋x402＋背景 splat の重ねは組んだばかり。**複雑な相互遮蔽の破綻と実機 fps は実機計測待ち**。
+- 実 splat の生成（Marble / Atlas の UI、または World API 経由）は加藤さん env。
+  Marble サブスクと World API クレジットは別会計。
 
 ### 差し替えの実証
 

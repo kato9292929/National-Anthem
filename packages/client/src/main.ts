@@ -20,6 +20,8 @@ import { fetchPresentationConfig, initialMode, unconfirmedList } from './present
 import { isFirstPass } from '@na/shared';
 import { stallMaterial } from './presentation/materials.js';
 import { loadAssignedMeshes, MESH_TRIANGLE_BUDGET, type LoadedMesh } from './presentation/meshes.js';
+import { BackgroundLayer } from './presentation/background.js';
+import { hasBackgroundSplat } from '@na/shared';
 import { assignedMeshSlots, type MaterialSlotId } from '@na/shared';
 
 /**
@@ -50,6 +52,9 @@ interface DebugHandle {
   setAssets: (on: boolean) => void;
   meshReport: () => { slot: string; triangles: number; reducedTriangles: number; placeholder: boolean }[];
   meshFailures: () => { slot: string; url: string; error: string }[];
+  backgroundEnabled: () => boolean;
+  setBackground: (on: boolean) => void;
+  backgroundStatus: () => unknown;
   postPasses: () => string[];
   frameStats: () => { averageMs: number; budgetMs: number; exceeded: boolean };
   unconfirmedPresentation: () => string[];
@@ -170,6 +175,7 @@ async function main(): Promise<void> {
   await reloadMeshes();
   built.applyMeshes(meshesBySlot, assetsOn);
 
+
   const camera = new THREE.PerspectiveCamera(
     GREYBOX.camera.fov,
     window.innerWidth / window.innerHeight,
@@ -204,18 +210,37 @@ async function main(): Promise<void> {
       assetsOn = !assetsOn;
       built.applyMeshes(meshesBySlot, assetsOn);
     }
+    if (event.code === 'KeyB') {
+      backgroundOn = !backgroundOn;
+      background.setEnabled(backgroundOn);
+    }
   });
 
+  // 背景 collider（見えない衝突メッシュ）を後から足せるよう、可変配列で持つ。
+  const colliders = [...built.colliders];
   const controller = new FirstPersonController({
     camera,
     canvas,
     stalls: built.stalls,
-    colliders: built.colliders,
+    colliders,
     bounds: built.bounds,
     onLockChange: (locked) => {
       prompt.hidden = locked;
     },
   });
+
+  // 背景レイヤー（Marble / Atlas の splat）。見た目専用・前景とは融合しない。
+  const background = new BackgroundLayer({
+    config: presentation.background,
+    renderer,
+    scene: built.scene,
+    onError: (message) => showError(`[background] ${message}`),
+  });
+  await background.load();
+  // 背景側の collider（あれば）を前景の当たりに足す。splat 自体には当たりを付けない。
+  for (const collider of background.colliders()) colliders.push(collider);
+  let backgroundOn = hasBackgroundSplat(presentation) && background.isEnabled;
+  background.setEnabled(backgroundOn);
 
   const applySession = (next: SessionPayload): void => {
     session = next;
@@ -309,6 +334,11 @@ async function main(): Promise<void> {
           placeholders: [...meshesBySlot.values()].filter((m) => m.placeholder).length,
           failures: meshFailures.length,
         },
+        background: {
+          enabled: background.isEnabled,
+          on: backgroundOn,
+          placeholder: presentation.background.placeholder,
+        },
       },
       world,
       session,
@@ -357,6 +387,12 @@ async function main(): Promise<void> {
         placeholder: m.placeholder,
       })),
     meshFailures: () => meshFailures,
+    backgroundEnabled: () => background.isEnabled,
+    setBackground: (on: boolean) => {
+      backgroundOn = on;
+      background.setEnabled(on);
+    },
+    backgroundStatus: () => background.status(),
     postPasses: () => layer.passIds,
     frameStats: () => layer.stats(),
     unconfirmedPresentation: () => unconfirmedList(presentation),
