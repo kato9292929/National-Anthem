@@ -4,6 +4,13 @@ import { bool, num, obj, str } from './guards.js';
 export interface AssetsConfig {
   version: string;
   generator: { tool: string; confirmed: boolean; verified: boolean };
+  tripo: {
+    pythonBin: string;
+    /** 1 回あたりのコスト（USD）。null の間はバッチできない（実測してから）。 */
+    estimatedCostUsd: number | null;
+    /** 要素種別 → 参照画像のパス。 */
+    references: Record<string, string>;
+  };
   budget: {
     hardCapUsd: number;
     warnAtUsd: number;
@@ -24,6 +31,14 @@ export interface AssetsConfig {
 export function validateAssetsConfig(input: unknown, source: string): AssetsConfig {
   const root = obj(input, source, '(root)');
   const generator = obj(root['generator'], source, 'generator');
+  const tripo = obj(root['tripo'], source, 'tripo');
+  const references = obj(tripo['references'], source, 'tripo.references');
+  const refMap: Record<string, string> = {};
+  for (const [key, value] of Object.entries(references)) {
+    if (key.startsWith('$')) continue;
+    refMap[key] = str(value, source, `tripo.references.${key}`);
+  }
+  const tripoCost = tripo['estimatedCostUsd'];
   const budget = obj(root['budget'], source, 'budget');
   const license = obj(root['license'], source, 'license');
   const poly = obj(root['polyBudget'], source, 'polyBudget');
@@ -35,6 +50,11 @@ export function validateAssetsConfig(input: unknown, source: string): AssetsConf
       tool: str(generator['tool'], source, 'generator.tool'),
       confirmed: bool(generator['confirmed'], source, 'generator.confirmed'),
       verified: bool(generator['verified'], source, 'generator.verified'),
+    },
+    tripo: {
+      pythonBin: str(tripo['pythonBin'], source, 'tripo.pythonBin'),
+      estimatedCostUsd: tripoCost === null ? null : num(tripoCost, source, 'tripo.estimatedCostUsd'),
+      references: refMap,
     },
     budget: {
       hardCapUsd: num(budget['hardCapUsd'], source, 'budget.hardCapUsd'),

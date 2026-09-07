@@ -85,6 +85,11 @@ function main(): void {
         license: runtime.assetsConfig.license,
         polyBudget: runtime.assetsConfig.polyBudget,
         costMeasured: runtime.assetsConfig.budget.measuredCostPerMeshUsd !== null,
+        tripo: {
+          pythonBin: runtime.assetsConfig.tripo.pythonBin,
+          costMeasured: runtime.assetsConfig.tripo.estimatedCostUsd !== null,
+          references: Object.keys(runtime.assetsConfig.tripo.references),
+        },
         assignedMeshes: Object.entries(runtime.renderConfig.assets.meshes)
           .filter(([, m]) => m.url !== '')
           .map(([slot, m]) => ({ slot, placeholder: m.placeholder, source: m.source })),

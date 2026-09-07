@@ -136,6 +136,14 @@ export const ENV_SPECS: EnvSpec[] = [
     example: '',
   },
   {
+    key: 'TRIPO_API_KEY',
+    description: '[区分B] Tripo の image→3D 生成キー（公式 SDK の文書化された変数名）。platform.tripo3d.ai で発行。',
+    requiredFrom: 'M7',
+    provisional: false,
+    secret: true,
+    example: '',
+  },
+  {
     key: 'NA_ARCIUM_MXE_ID',
     description: '[区分B] Arcium の MXE id。実計算の呼び出し形は未実装（Arcium 側も real path 未実装）。',
     requiredFrom: 'M5',

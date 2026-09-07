@@ -2,10 +2,22 @@
   "$comment": "生成アセットの設定。実生成（Tripo / Meshy）は区分B。バッチ前に 1 回あたりのコストを実測し、ハードキャップを超えたら止める（osd の再発防止）。ダミーを実物に見せない。",
   "version": "0",
   "generator": {
-    "$comment": "実生成ツール。未指定なら placeholder（ダミー .glb）で配管だけ確認する。",
+    "$comment": "実生成ツール。tool=tripo で Tripo の image→3D（公式 SDK 経由）。未指定/placeholder ならダミー .glb で配管だけ確認する。",
     "tool": "placeholder",
     "confirmed": false,
     "verified": false
+  },
+  "tripo": {
+    "$comment": "Tripo の設定。参照画像は加藤さんが assets/references に入れる（区分B）。estimatedCostUsd は 1 回生成して実測してから埋める。",
+    "pythonBin": "python3",
+    "estimatedCostUsd": null,
+    "references": {
+      "wall": "assets/references/mudbrick-block.jpg",
+      "stall": "assets/references/market-stall.jpg",
+      "gate": "assets/references/stone-gate.jpg",
+      "counter": "assets/references/wood-counter.jpg",
+      "floor": "assets/references/paving.jpg"
+    }
   },
   "budget": {
     "$comment": "【仮値】1 回あたりの実測を入れてから使う。実測前にバッチしない。",

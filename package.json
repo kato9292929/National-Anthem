@@ -25,7 +25,8 @@
     "verify:b": "node scripts/verify-b.mjs",
     "assets:placeholders": "npm run build -w @na/tools && node packages/tools/dist/make-placeholders.js",
     "assets:smoke": "node scripts/assets-smoke.mjs",
-    "bg:smoke": "node scripts/background-smoke.mjs"
+    "bg:smoke": "node scripts/background-smoke.mjs",
+    "generate:tripo": "npm run generate:tripo -w @na/tools --"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

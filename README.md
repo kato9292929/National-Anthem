@@ -13,6 +13,8 @@
 | `packages/client/src/presentation/` | 見た目の受け口（マテリアルのスロット・シェーダ・ポスプロ pipeline・生成メッシュの読み込み）。色や強度は config から差す |
 | `packages/tools/` | 生成アセットのツール（GLB ライタ・placeholder ジェネレータ・生成アダプタ interface） |
 | `assets/meshes/` | 生成メッシュ（現在は placeholder の `.glb`。実物ではない） |
+| `packages/tools/py/tripo_generate.py` | Tripo 公式 SDK（tripo3d）のラッパ。image→3D→`.glb` |
+| `packages/tools/src/tripo-generator.ts` | Tripo アダプタ（鍵が無ければ落ちる・偽 `.glb` を作らない） |
 | `packages/client/src/presentation/background.ts` | 背景 splat レイヤー（Spark 配線・collider 分離・トグル） |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
 | `docs/x402-wire-contract.md` | x402 の実ワイヤ（稼働プロダクト X-alpha / OSD / AA からの引き写し・出どころ付き） |
@@ -46,6 +48,7 @@ npm run dev:client        # http://localhost:5173（/api はサーバへプロ�
 npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し artifacts/ に画面を残す
 npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
 npm run assets:placeholders  # 要素種別ごとのダミー .glb を生成（実物ではない）
+npm run generate:tripo -- --slot wall  # Tripo で実 .glb を 1 個生成（区分B・要 TRIPO_API_KEY）
 npm run assets:smoke      # 生成メッシュのスロット差し替えを一周（区分A）
 npm run bg:smoke          # 背景 splat（Marble/Spark）レイヤーを一周（区分A）
 npm run agent:dry-run     # M6 の dry-run。1 サイクルのトークン量とコストを出す（LLM 呼び出し 0）
@@ -327,7 +330,7 @@ greybox の箱を生成した実メッシュに差し替える配管。**方針�
 
 | 段 | 中身 | 状態 |
 | --- | --- | --- |
-| 生成 | 画像 → `.glb`。アダプタ interface は `packages/tools/src/gen-types.ts` | placeholder のみ。実生成は区分B（鍵が無ければ `MeshGeneratorUnavailableError` で落ちる） |
+| 生成 | 画像 → `.glb`。アダプタ interface は `packages/tools/src/gen-types.ts` | placeholder ＋ **Tripo 実装**。鍵が無ければ `MeshGeneratorUnavailableError` で落ちる |
 | インポート | `.glb` を three へ（`GLTFLoader`） | 済 |
 | 最適化 | 長辺を greybox の箱に正規化、up 補正、ポリゴン予算（40,000 tri）超過は `SimplifyModifier` で decimation | 済 |
 | スロット差し替え | `assets.meshes`（config 駆動）に入れ、要素種別ごとに greybox の箱と差し替え。`M` キーでトグル | 済。greybox は消さない |
@@ -337,10 +340,17 @@ greybox の箱を生成した実メッシュに差し替える配管。**方針�
 **ダミーを実物に見せない**: placeholder の `.glb` は `placeholder: true` を config・生成物・HUD（「ダミー」タグ）に残す。
 読み込み失敗は握りつぶさず、画面に出して greybox の箱にフォールバックする（成功に見せない）。
 
-**コスト（区分B）**: `config/assets.config.json` の `budget`。**1 回あたりのコストを実測するまでバッチできない**
-（`requireMeasurementBeforeBatch` / `AssetBatchBlockedError`。osd の再発防止）。キャップ超過も止まる。
+**Tripo 実生成（区分B）**: `npm run generate:tripo -- --slot wall` で参照画像 1 枚 → `.glb` 1 個 →
+`assets/meshes/tripo-slots.json`（config に貼るスニペット）。呼び出し形は**公式 Python SDK（`tripo3d`）に委ねる**
+（`packages/tools/py/tripo_generate.py` を subprocess で呼ぶ。native REST の URL を推測しない）。
+`TRIPO_API_KEY` が無ければ落ちる。SDK 不在・生成失敗・`.glb` 不在はすべて fail-loud（偽 `.glb` を作らない）。
+**最小の一歩は 1 種別**（`--slot`）。通れば他も同じ経路、`--all` でバッチ。
 
-**ライセンス**: 無料枠は Tripo が非商用 / Meshy が CC BY。出荷は有料プランで所有権を取るまでしない。
+**コスト（区分B）**: `config/assets.config.json` の `budget` / `tripo.estimatedCostUsd`。
+Tripo はクレジットがリクエスト送信時に引かれる（失敗時は自動返金）。**1 回あたりを実測するまでバッチできない**
+（`--all` は `requireMeasurementBeforeBatch` / `AssetBatchBlockedError` で止まる。osd の再発防止）。キャップ超過も止まる。
+
+**ライセンス**: **Tripo 無料枠は非商用**。出荷は有料プランで所有権を取るまで本番に出さない（Meshy は CC BY）。
 現在のアセットは placeholder（自前生成の箱・制約なし）。`config/assets.config.json` の `license` に記録。
 
 ### 背景 splat（Marble / Atlas ブリッジ）
@@ -364,8 +374,12 @@ greybox の箱を生成した実メッシュに差し替える配管。**方針�
 `npm run bg:smoke` が placeholder splat を割り当てた config ツリーで一周する
 （Spark が前景と共存・背景は奥・トグル・collider 分離・budget 再計測）。ソース修正ゼロ。
 
-### 未検証（区分B・実機）
+### 未検証（区分B・実キー）
 
+- Tripo の実生成: 呼び出し形は公式 SDK に委ねているが、この環境には鍵もネットも無く
+  `tripo3d` も未インストールなので **1 個も実生成できていない**。`generator.verified` は `false` のまま。
+  `TRIPO_API_KEY` と `pip install tripo3d` のある環境で `npm run generate:tripo -- --slot wall` を回し、
+  箱と差し替わるか・1 回あたりのコストを確認してから `estimatedCostUsd` を埋めてバッチする。
 - 前景メッシュ＋x402＋背景 splat の重ねは組んだばかり。**複雑な相互遮蔽の破綻と実機 fps は実機計測待ち**。
 - 実 splat の生成（Marble / Atlas の UI、または World API 経由）は加藤さん env。
   Marble サブスクと World API クレジットは別会計。

@@ -47,3 +47,12 @@ test('measuredCostPerMeshUsd が数値でも null でも読める', () => {
   );
   assert.equal(withNumber.budget.measuredCostPerMeshUsd, 0.3);
 });
+
+test('Tripo の設定: 参照画像とコストは未実測（バッチ前提を保つ）', () => {
+  assert.equal(config.generator.tool, 'placeholder', '既定は placeholder（実生成は明示的に切り替え）');
+  assert.equal(config.tripo.pythonBin, 'python3');
+  assert.equal(config.tripo.estimatedCostUsd, null, '1 回あたりのコストは実測前');
+  for (const slot of ['wall', 'stall', 'gate', 'counter', 'floor']) {
+    assert.ok(config.tripo.references[slot], `${slot} の参照画像パスが無い`);
+  }
+});
