@@ -111,6 +111,8 @@ try {
   // headless の描画は実機より遅いので、予算も headless 用の値を使う。
   await page.goto(`${BASE}/?headless=1`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__na_debug !== undefined, null, { timeout: 15000 });
+  // これは M2/M3/M7（greybox）の受け入れ。環境メッシュ（ur.glb）は別 smoke で見せるので greybox で測る。
+  await page.evaluate(() => window.__na_debug.setEnvironment?.(false));
 
   const debug = await page.evaluate(() => ({
     stallCount: window.__na_debug.stallCount,

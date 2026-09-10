@@ -82,10 +82,29 @@ try {
   // 録画で段が見えるよう、点灯の間隔を少し取る（各段の合否は実データ）。
   await page.evaluate(() => window.__na_debug.setStepDelay(260));
 
-  // 1. stall の前に立つ。
+  // 環境メッシュ（ur.glb）が読めて、既定で greybox の代わりに立っているか。
+  const env = await page.evaluate(() => ({
+    status: window.__na_debug.environmentStatus(),
+    enabled: window.__na_debug.environmentEnabled(),
+  }));
+  check(env.status.loaded === true && env.status.error === null, 'ur.glb（環境メッシュ）が読める', env.status.error ?? `${env.status.triangles}tri`);
+  check(env.enabled === true, '既定でウルの市場（ur.glb）が立っている（箱ではない）', `placeholder=${env.status.placeholder}`);
+  check(env.status.placeholder === false, 'ur.glb は実メッシュ扱い（placeholder:false）', env.status.source);
+  // greybox ↔ ur.glb のトグル（greybox は消さない）。
+  await page.evaluate(() => window.__na_debug.setEnvironment(false));
+  await sleep(200);
+  await shot(page, 'payment-00-greybox.png');
+  const greyboxOff = await page.evaluate(() => window.__na_debug.environmentEnabled());
+  check(greyboxOff === false, 'M 相当で greybox に戻せる（greybox は消さない）');
+  await page.evaluate(() => window.__na_debug.setEnvironment(true));
+  await sleep(200);
+
+  // 1. stall の前に立つ。市場（ur.glb）を正面に収める南寄りの位置から、最寄り stall を焦点に。
   const focusedId = await page.evaluate(async () => {
-    const stall = window.__na_debug.stallPositions[0];
-    window.__na_debug.moveTo(stall.x < 0 ? stall.x + 2.6 : stall.x - 2.6, stall.z);
+    const stalls = window.__na_debug.stallPositions;
+    const south = stalls.reduce((a, b) => (b.z > a.z ? b : a));
+    // stall のやや通路側・南（focus 範囲内）に立ち、-Z を向いて市場を見通す。
+    window.__na_debug.moveTo(south.x < 0 ? south.x + 2.6 : south.x - 2.6, south.z + 3);
     await new Promise((r) => setTimeout(r, 150));
     return window.__na_debug.focusedCategoryId();
   });

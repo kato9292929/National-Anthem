@@ -23,7 +23,13 @@ export interface HudHandles {
       stats: { averageMs: number; budgetMs: number; exceeded: boolean };
       unconfirmed: string[];
       firstPass: boolean;
-      assets: { on: boolean; meshes: number; placeholders: number; failures: number };
+      assets: {
+        on: boolean;
+        meshes: number;
+        placeholders: number;
+        failures: number;
+        environment: { present: boolean; on: boolean; triangles: number };
+      };
       background: { enabled: boolean; on: boolean; placeholder: boolean };
     };
     world: WorldPayload;
@@ -97,11 +103,14 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
       el('stat-bg').innerHTML = !bg.enabled
         ? '<span class="dim">なし (B で切替)</span>'
         : `${bg.on ? 'splat' : 'off'} <span class="dim">(B)</span>` + (bg.placeholder ? ' <span class="tag">ダミー</span>' : '');
-      el('stat-assets').innerHTML = a.meshes === 0
-        ? '<span class="dim">greybox のみ (M で切替)</span>'
-        : `${a.on ? 'mesh' : 'greybox'} <span class="dim">(M)</span> ${a.meshes}` +
-          (a.placeholders > 0 ? ' <span class="tag">ダミー</span>' : '') +
-          (a.failures > 0 ? ` <span class="down">失敗${a.failures}</span>` : '');
+      el('stat-assets').innerHTML = a.environment.present
+        ? `${a.environment.on ? 'ur.glb' : 'greybox'} <span class="dim">(M で切替)</span> ${a.environment.triangles}tri` +
+          (a.failures > 0 ? ` <span class="down">失敗${a.failures}</span>` : '')
+        : a.meshes === 0
+          ? '<span class="dim">greybox のみ (M で切替)</span>'
+          : `${a.on ? 'mesh' : 'greybox'} <span class="dim">(M)</span> ${a.meshes}` +
+            (a.placeholders > 0 ? ' <span class="tag">ダミー</span>' : '') +
+            (a.failures > 0 ? ` <span class="down">失敗${a.failures}</span>` : '');
       const stats = presentation.stats;
       el('stat-budget').innerHTML =
         stats.averageMs > 0

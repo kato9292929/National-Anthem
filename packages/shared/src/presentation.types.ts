@@ -56,6 +56,34 @@ export interface MeshAssetSlot {
   rotationDeg: { x: number; y: number; z: number };
 }
 
+/**
+ * ワールド全体の環境メッシュ（Blender 出力の 1 シーン）。
+ * 要素種別ごとの差し替え（meshes）とは別に、シーンを丸ごと 1 個読み込む受け口。
+ * url が空なら未割り当て（greybox のまま）。placeholder ではない実メッシュでも placeholder:false。
+ */
+export interface EnvironmentAsset {
+  url: string;
+  source: string;
+  /** ダミーか。Blender 生成の実メッシュは false。実物に見せないためのフラグ自体は残す。 */
+  placeholder: boolean;
+  /** ワールドの footprint（greybox の床）に合わせて自動スケールするか。 */
+  fitToWorld: boolean;
+  /** fit 時の余白率（1=ぴったり / <1 で内側に寄せる / >1 ではみ出す）。 */
+  fitMargin: number;
+  /** 手動オフセット・向き・追加スケール（fit の後に掛ける）。 */
+  position: { x: number; y: number; z: number };
+  rotationDeg: { x: number; y: number; z: number };
+  scale: number;
+  /** true なら stylized マテリアルを上掛け。既定 false（glb 本来の色を見せる）。 */
+  stylizeOnTop: boolean;
+  /**
+   * true なら glb のマテリアルを unlit（MeshBasic）へ変換して本来の色をそのまま出す。
+   * greybox の自己発光シェーダに合わせて景色の光量を絞っているため、PBR のままだと暗く沈む。
+   * 既定 true（Blender の色を確実に見せる）。stylizeOnTop が true のときは無視。
+   */
+  unlit: boolean;
+}
+
 export interface PostPassConfig {
   id: PostPassId;
   enabled: boolean;
@@ -134,6 +162,8 @@ export interface PresentationConfig {
     textures: Record<string, string>;
     /** 要素種別 → 生成メッシュの割り当て。空なら greybox 形状のまま。 */
     meshes: Record<MaterialSlotId, MeshAssetSlot>;
+    /** ワールド全体の環境メッシュ（1 シーン）。url が空なら未割り当て。 */
+    environment: EnvironmentAsset;
   };
   performance: { confirmed: boolean; frameBudgetMs: number; headlessFrameBudgetMs: number };
 }
@@ -351,6 +381,7 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
         }
         return out;
       })(),
+      environment: parseEnvironmentAsset(assets['environment'], source),
     },
     performance: {
       confirmed: bool(performance['confirmed'], source, 'performance.confirmed'),
@@ -358,6 +389,60 @@ export function validatePresentationConfig(input: unknown, source: string): Pres
       headlessFrameBudgetMs: num(performance['headlessFrameBudgetMs'], source, 'performance.headlessFrameBudgetMs'),
     },
   };
+}
+
+/**
+ * 環境メッシュの受け口を読む。省略時は未割り当て（空）として扱う（既存 config を壊さない）。
+ * url があるのに placeholder が未指定、を許さない（ダミーか実物かを明示する）。
+ */
+function parseEnvironmentAsset(raw: unknown, source: string): EnvironmentAsset {
+  const empty: EnvironmentAsset = {
+    url: '',
+    source: '',
+    placeholder: false,
+    fitToWorld: true,
+    fitMargin: 1,
+    position: { x: 0, y: 0, z: 0 },
+    rotationDeg: { x: 0, y: 0, z: 0 },
+    scale: 1,
+    stylizeOnTop: false,
+    unlit: true,
+  };
+  if (raw === undefined) return empty;
+  const o = obj(raw, source, 'assets.environment');
+  const url = str2(o['url'], source, 'assets.environment.url');
+  if (url === '') return empty;
+  if (o['placeholder'] === undefined) {
+    throw new Error(`${source}: assets.environment に placeholder が無い（ダミーか実物かを明示する）`);
+  }
+  const pos = obj(o['position'], source, 'assets.environment.position');
+  const rot = obj(o['rotationDeg'], source, 'assets.environment.rotationDeg');
+  return {
+    url,
+    source: str2(o['source'], source, 'assets.environment.source'),
+    placeholder: bool(o['placeholder'], source, 'assets.environment.placeholder'),
+    fitToWorld: bool(o['fitToWorld'], source, 'assets.environment.fitToWorld'),
+    fitMargin: num(o['fitMargin'], source, 'assets.environment.fitMargin'),
+    position: {
+      x: num(pos['x'], source, 'assets.environment.position.x'),
+      y: num(pos['y'], source, 'assets.environment.position.y'),
+      z: num(pos['z'], source, 'assets.environment.position.z'),
+    },
+    rotationDeg: {
+      x: num(rot['x'], source, 'assets.environment.rotationDeg.x'),
+      y: num(rot['y'], source, 'assets.environment.rotationDeg.y'),
+      z: num(rot['z'], source, 'assets.environment.rotationDeg.z'),
+    },
+    scale: num(o['scale'], source, 'assets.environment.scale'),
+    stylizeOnTop: bool(o['stylizeOnTop'], source, 'assets.environment.stylizeOnTop'),
+    // 省略時は unlit（既定で色を確実に見せる）。
+    unlit: o['unlit'] === undefined ? true : bool(o['unlit'], source, 'assets.environment.unlit'),
+  };
+}
+
+/** 環境メッシュ（1 シーン）が割り当てられているか。 */
+export function hasEnvironmentMesh(config: PresentationConfig): boolean {
+  return config.assets.environment.url !== '';
 }
 
 /** 背景 splat が割り当てられているか。 */

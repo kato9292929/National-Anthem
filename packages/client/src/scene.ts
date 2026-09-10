@@ -84,6 +84,11 @@ export interface BuiltScene {
    * 割り当ての無い要素種別は箱のまま。greybox 経路は消さない。
    */
   applyMeshes(meshes: Map<MaterialSlotId, LoadedMesh>, use: boolean): void;
+  /**
+   * greybox の構造（床・壁・stall の箱・門）をまとめて表示/非表示する。
+   * 環境メッシュ（ur.glb）を丸ごと乗せるときに構造だけ隠す。看板（価格札）は残す。
+   */
+  setStructureVisible(visible: boolean): void;
 }
 
 /** greybox の箱と、そこへ差し込む生成メッシュの置き場。 */
@@ -145,11 +150,16 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
   const width = layout.halfWidth * 2;
   const depth = layout.halfDepth * 2;
 
+  // greybox の構造（床・壁・箱・門）はまとめて隠せるよう 1 つの group に入れる。
+  // 看板（価格札）はここに入れず scene に直に置く（環境メッシュ時も残す）。
+  const structure = new THREE.Group();
+  scene.add(structure);
+
   const anchors: MeshAnchor[] = [];
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), materials.floor);
   const walls: THREE.Mesh[] = [];
   floor.rotation.x = -Math.PI / 2;
-  scene.add(floor);
+  structure.add(floor);
 
   const wallMaterial = materials.wall;
   const { wallHeight: h, wallThickness: t } = GREYBOX.space;
@@ -162,7 +172,7 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
   for (const [w, hh, d, x, z] of wallSpecs) {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), wallMaterial);
     wall.position.set(x, hh / 2, z);
-    scene.add(wall);
+    structure.add(wall);
     walls.push(wall);
     anchors.push({
       slot: 'wall',
@@ -186,12 +196,12 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
     });
   }
   for (const stall of stalls) {
-    scene.add(stall.group);
-    // 看板はワールド座標に置く（group は回転しているので入れ子にしない）。
+    structure.add(stall.group);
+    // 看板はワールド座標に置く（group は回転しているので入れ子にしない）。環境メッシュ時も残す。
     scene.add(stall.label);
   }
 
-  const { gates, partitions, partitionMeshes } = buildPartition(scene, layout, gateSpecs, wallMaterial, materials, colors);
+  const { gates, partitions, partitionMeshes } = buildPartition(structure, scene, layout, gateSpecs, wallMaterial, materials, colors);
   for (const gate of gates) {
     anchors.push({
       slot: 'gate',
@@ -211,6 +221,10 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
     instance: null,
   });
 
+  // 生成メッシュ（per-slot）のインスタンスは構造 group に入れ、構造トグルと一緒に扱う。
+  const meshLayer = new THREE.Group();
+  structure.add(meshLayer);
+
   const colliders: Collider[] = [
     ...stalls.map((stall) => ({ bounds: stall.bounds, isSolid: () => true })),
     ...partitions.map((bounds) => ({ bounds, isSolid: () => true })),
@@ -229,7 +243,7 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
         // 割り当てが無ければ箱のまま。
         if (!use || !loaded) {
           if (anchor.instance) {
-            scene.remove(anchor.instance);
+            meshLayer.remove(anchor.instance);
             anchor.instance = null;
           }
           for (const box of anchor.boxes) box.visible = true;
@@ -245,12 +259,15 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
           if (longest > 0 && anchor.footprint > 0) instance.scale.multiplyScalar(anchor.footprint / longest);
           instance.position.copy(anchor.position);
           instance.rotation.y = anchor.rotationY;
-          scene.add(instance);
+          meshLayer.add(instance);
           anchor.instance = instance;
         }
         anchor.instance.visible = true;
         for (const box of anchor.boxes) box.visible = false;
       }
+    },
+    setStructureVisible: (visible) => {
+      structure.visible = visible;
     },
     applyMaterials: (next, focusedStallId) => {
       floor.material = next.floor;
@@ -270,7 +287,8 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
  * 門の数と位置は room の数から決まる（room が増えても並びが伸縮する）。
  */
 function buildPartition(
-  scene: THREE.Scene,
+  structure: THREE.Object3D,
+  labelParent: THREE.Object3D,
   layout: MarketLayout,
   specs: GateSpec[],
   wallMaterial: THREE.Material,
@@ -310,7 +328,7 @@ function buildPartition(
       wallMaterial,
     );
     mesh.position.set(from + segmentWidth / 2, GREYBOX.space.wallHeight / 2, z);
-    scene.add(mesh);
+    structure.add(mesh);
     partitionMeshes.push(mesh);
     partitions.push({
       minX: from,
@@ -323,7 +341,7 @@ function buildPartition(
   for (const opening of openings) {
     const door = new THREE.Mesh(new THREE.BoxGeometry(g.doorWidth, g.doorHeight, g.thickness), materials.gateClosed);
     door.position.set(opening.x, g.doorHeight / 2, z);
-    scene.add(door);
+    structure.add(door);
 
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = 512;
@@ -332,7 +350,7 @@ function buildPartition(
     const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, transparent: true }));
     label.scale.set(2.6, 1.3, 1);
     label.position.set(opening.x, g.labelHeight, z);
-    scene.add(label);
+    labelParent.add(label);
 
     gates.push({
       roomId: opening.spec.roomId,

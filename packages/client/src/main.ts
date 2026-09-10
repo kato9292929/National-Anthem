@@ -23,7 +23,8 @@ import { isFirstPass } from '@na/shared';
 import { stallMaterial } from './presentation/materials.js';
 import { loadAssignedMeshes, MESH_TRIANGLE_BUDGET, type LoadedMesh } from './presentation/meshes.js';
 import { BackgroundLayer } from './presentation/background.js';
-import { hasBackgroundSplat } from '@na/shared';
+import { EnvironmentLayer } from './presentation/environment.js';
+import { hasBackgroundSplat, hasEnvironmentMesh } from '@na/shared';
 import { assignedMeshSlots, type MaterialSlotId } from '@na/shared';
 
 /**
@@ -57,6 +58,9 @@ interface DebugHandle {
   backgroundEnabled: () => boolean;
   setBackground: (on: boolean) => void;
   backgroundStatus: () => unknown;
+  environmentEnabled: () => boolean;
+  setEnvironment: (on: boolean) => void;
+  environmentStatus: () => unknown;
   postPasses: () => string[];
   frameStats: () => { averageMs: number; budgetMs: number; exceeded: boolean };
   unconfirmedPresentation: () => string[];
@@ -218,8 +222,15 @@ async function main(): Promise<void> {
       return;
     }
     if (event.code === 'KeyM') {
-      assetsOn = !assetsOn;
-      built.applyMeshes(meshesBySlot, assetsOn);
+      if (hasEnv) {
+        // 環境メッシュ（ur.glb）↔ greybox。greybox は消さない。
+        envOn = !envOn;
+        environment.setEnabled(envOn);
+        built.setStructureVisible(!envOn);
+      } else {
+        assetsOn = !assetsOn;
+        built.applyMeshes(meshesBySlot, assetsOn);
+      }
     }
     if (event.code === 'KeyB') {
       backgroundOn = !backgroundOn;
@@ -252,6 +263,21 @@ async function main(): Promise<void> {
   for (const collider of background.colliders()) colliders.push(collider);
   let backgroundOn = hasBackgroundSplat(presentation) && background.isEnabled;
   background.setEnabled(backgroundOn);
+
+  // 環境メッシュ（ウルの市場・Blender 出力の 1 シーン）。greybox とはトグルで切替（M）。
+  // 割り当てがあれば既定で環境メッシュを出し、greybox の構造だけ隠す（看板・当たりは据え置き）。
+  const hasEnv = hasEnvironmentMesh(presentation);
+  const environment = new EnvironmentLayer({
+    config: presentation.assets.environment,
+    scene: built.scene,
+    worldBounds: built.bounds,
+    material: layer.materials.wall,
+    onError: (message) => showError(`[environment] ${message}`),
+  });
+  await environment.load();
+  let envOn = hasEnv && environment.isEnabled;
+  environment.setEnabled(envOn);
+  built.setStructureVisible(!envOn);
 
   const applySession = (next: SessionPayload): void => {
     session = next;
@@ -412,6 +438,7 @@ async function main(): Promise<void> {
           meshes: meshesBySlot.size,
           placeholders: [...meshesBySlot.values()].filter((m) => m.placeholder).length,
           failures: meshFailures.length,
+          environment: { present: hasEnv, on: environment.isEnabled, triangles: environment.triangleCount },
         },
         background: {
           enabled: background.isEnabled,
@@ -472,6 +499,14 @@ async function main(): Promise<void> {
       background.setEnabled(on);
     },
     backgroundStatus: () => background.status(),
+    environmentEnabled: () => environment.isEnabled,
+    setEnvironment: (on: boolean) => {
+      if (!hasEnv) return;
+      envOn = on;
+      environment.setEnabled(on);
+      built.setStructureVisible(!on);
+    },
+    environmentStatus: () => environment.status(),
     postPasses: () => layer.passIds,
     frameStats: () => layer.stats(),
     unconfirmedPresentation: () => unconfirmedList(presentation),

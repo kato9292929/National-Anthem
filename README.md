@@ -12,10 +12,11 @@
 | `config/` | world 以外の設定（identity・room・市場構造・x402・privacy・agent・commission・presentation）。ソースにリテラルを書かない |
 | `packages/client/src/presentation/` | 見た目の受け口（マテリアルのスロット・シェーダ・ポスプロ pipeline・生成メッシュの読み込み）。色や強度は config から差す |
 | `packages/tools/` | 生成アセットのツール（GLB ライタ・placeholder ジェネレータ・生成アダプタ interface） |
-| `assets/meshes/` | 生成メッシュ（現在は placeholder の `.glb`。実物ではない） |
+| `assets/meshes/` | メッシュ（要素種別ごとの placeholder `.glb` ＋ 環境メッシュ `national-anthem-ur-market.glb`＝Blender 生成のウルの市場・1 シーン） |
 | `packages/tools/py/tripo_generate.py` | Tripo 公式 SDK（tripo3d）のラッパ。image→3D→`.glb` |
 | `packages/tools/src/tripo-generator.ts` | Tripo アダプタ（鍵が無ければ落ちる・偽 `.glb` を作らない） |
 | `packages/client/src/presentation/background.ts` | 背景 splat レイヤー（Spark 配線・collider 分離・トグル） |
+| `packages/client/src/presentation/environment.ts` | 環境メッシュ（ur.glb を丸ごと 1 シーンで読み込み・fit-to-world・greybox トグル） |
 | `scripts/smoke.mjs` | 実ブラウザでの受け入れ確認（stall・市場値の出所・歩行・当たり・フレーム） |
 | `docs/x402-wire-contract.md` | x402 の実ワイヤ（稼働プロダクト X-alpha / OSD / AA からの引き写し・出どころ付き） |
 | `docs/verification-b-runbook.md` | 区分B の実確認ランブック（段ごとに要る鍵・ネットワーク・仕様と、現状の詰まり） |
@@ -44,7 +45,7 @@ npm test                  # サーバのテスト（config / env / 市場シム 
 npm run sim -- --ticks 200 --every 40 --shock-at 60   # ヘッドレスで市場を回す
 npm run dev:server        # http://localhost:8787
 npm run dev:client        # http://localhost:5173（/api はサーバへプロキシ）
-                          #   P キーで greybox ↔ stylized、?render=stylized で起動時から stylized
+                          #   P キーで greybox ↔ stylized、M キーで greybox ↔ ur.glb（ウルの市場）、?render=stylized
 npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し artifacts/ に画面を残す
 npm run smoke:payment     # 決済デモ（区分A・mock）。近づく→買う→決済フロー→反映 を録画（artifacts/payment-*.png）
 npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
@@ -369,6 +370,25 @@ Tripo はクレジットがリクエスト送信時に引かれる（失敗時�
 
 **ライセンス**: **Tripo 無料枠は非商用**。出荷は有料プランで所有権を取るまで本番に出さない（Meshy は CC BY）。
 現在のアセットは placeholder（自前生成の箱・制約なし）。`config/assets.config.json` の `license` に記録。
+
+### 環境メッシュ（ur.glb — ウルの市場）
+
+要素種別ごとの差し替え（`assets.meshes`）とは別に、**ワールドを丸ごと 1 シーンで差し替える受け口**
+（`config/presentation.config.json` の `assets.environment`）。決済デモの画面を、灰色の箱ではなく
+ウルの市場の中で見せる。`packages/client/src/presentation/environment.ts`。
+
+| 項目 | 中身 |
+| --- | --- |
+| メッシュ | `assets/meshes/national-anthem-ur-market.glb`（22,306 tri / 13 マテリアル / テクスチャなし） |
+| 由来 | **Blender 生成の手続きメッシュ**（建物列・ジッグラト・stall・壺・キャノピー・ナツメヤシの 1 シーン）。**仮の見た目・実写ではない**。placeholder ではないので `placeholder:false` |
+| 配置 | greybox の床 footprint に合わせて丸ごと fit（`fitToWorld`）。原点・向き・追加スケールは config |
+| 見た目 | 既定は unlit（`unlit:true`）で glb 本来の色をそのまま出す（景色の光量を絞っているため PBR のままだと沈む）。`stylizeOnTop:true` で stylized 上掛けも可 |
+| 決済との関係 | 決済インタラクション（stall の当たり・E 購入）は greybox 側の位置に据え置き、環境メッシュは見た目だけを上に乗せる。stall の価格札は環境メッシュ時も残す |
+| トグル | `M` キーで greybox ↔ ur.glb。**greybox は消さない** |
+| 録画 | `npm run smoke:payment` は ur.glb を差した状態で走り、「ウルの市場の中で決済が走る」画面を `artifacts/payment-*.png` に残す（`payment-00-greybox.png` は greybox 側） |
+
+**fail-loud**: 読み込み失敗は画面に出し、greybox にフォールバックする（成功に見せない）。
+据え置き（今回やらない）: 要素種別ごとの精密な差し替え、実機での frame budget 確定。
 
 ### 背景 splat（Marble / Atlas ブリッジ）
 

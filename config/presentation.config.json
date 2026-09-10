@@ -197,7 +197,20 @@
     "$comment": "要素種別ごとに生成メッシュを割り当てる受け口。url が空なら greybox 形状。ダミーは placeholder:true を残し、実物に見せない。生成ツールは config には現れない。",
     "confirmed": false,
     "textures": {},
-    "meshes": {}
+    "meshes": {},
+    "environment": {
+      "$comment": "ワールド全体の環境メッシュ（Blender 出力の 1 シーン）。placeholder:false の実メッシュだが、見た目は仮（Blender 手続きメッシュ・実写ではない）。M キーで greybox と切替。",
+      "url": "assets/meshes/national-anthem-ur-market.glb",
+      "source": "Blender 生成（ウルの市場・建物列/ジッグラト/stall/壺/キャノピー/ナツメヤシの 1 シーン）。仮の見た目・実写ではない",
+      "placeholder": false,
+      "fitToWorld": true,
+      "fitMargin": 1.0,
+      "position": { "x": 0, "y": 0, "z": 0 },
+      "rotationDeg": { "x": 0, "y": 0, "z": 0 },
+      "scale": 1.0,
+      "stylizeOnTop": false,
+      "unlit": true
+    }
   },
   "performance": {
     "$comment": "【一次案・要調整】4 パスは重い。実機計測で outline か grain を落とす候補。headless（SwiftShader）は実機より大幅に遅い。",
