@@ -30,3 +30,33 @@ html, body { margin: 0; height: 100%; background: #1b1c1e; color: #e6e7e9;
 table { width: 100%; border-collapse: collapse; }
 td { padding: 1px 0; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mono { font-variant-numeric: tabular-nums; }
+
+/* mock 決済であることの常時表示（実チェーンではない）。 */
+#mock-banner { position: fixed; left: 50%; top: 0; transform: translateX(-50%);
+  background: #2c2410; border: 1px solid #a3872f; color: #e8d79a; padding: 3px 12px;
+  font-size: 11px; letter-spacing: .03em; border-top: none; z-index: 5; }
+
+/* 決済フロー（この画面の主役）。中央下に据える。 */
+#panel-payment { grid-column: 2; grid-row: 3; align-self: end; justify-self: center;
+  width: min(520px, 46vw); border-color: #6a6d72; }
+#panel-payment h2 { display: flex; align-items: center; gap: 8px; }
+#pay-rows { margin: 4px 0 6px; }
+.pay-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.pay-label { min-width: 190px; }
+.pay-detail { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pay-dot { width: 10px; height: 10px; border-radius: 50%; flex: none;
+  border: 1px solid #6a6d72; background: transparent; transition: background .15s, border-color .15s; }
+.pay-dot[data-state="pending"] { background: transparent; border-color: #55585d; }
+.pay-dot[data-state="active"] { background: #d9c48a; border-color: #d9c48a; box-shadow: 0 0 6px #d9c48a; }
+.pay-dot[data-state="ok"] { background: #9fd39f; border-color: #9fd39f; }
+.pay-dot[data-state="fail"] { background: #d99b9b; border-color: #d99b9b; }
+.pay-row[data-step] .pay-dot[data-state="pending"] ~ .pay-label { color: #8a8d92; }
+#pay-status { border-top: 1px solid #34363a; padding-top: 5px; margin-top: 2px; }
+
+/* 購入 UI（最小・キーボード駆動）。 */
+#buy { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6; }
+#buy[hidden] { display: none; }
+.buy-card { background: rgba(20,21,23,.94); border: 1px solid #b9bcc0; padding: 12px 16px; min-width: 240px; }
+.buy-title { font-weight: 600; margin-bottom: 6px; letter-spacing: .04em; }
+.buy-actions { margin-top: 8px; border-top: 1px solid #34363a; padding-top: 6px; }

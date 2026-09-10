@@ -37,11 +37,23 @@ export function fetchMarketState(): Promise<MarketState> {
   return getJson<MarketState>('/api/market/state');
 }
 
+export interface LedgerPayload {
+  buyerId: string;
+  credits: number;
+  inventory: { itemId: string; quantity: number }[];
+  held: number;
+  capacity: number;
+  startingCredits: number;
+  purchases: number;
+  provisional: boolean;
+}
+
 export interface SessionPayload {
   identity: Identity;
   wallet: Wallet | null;
   wallets: Wallet[];
   standing: Standing;
+  ledger: LedgerPayload;
   rooms: {
     id: string;
     label_ja: string;
@@ -50,6 +62,73 @@ export interface SessionPayload {
     gate: RoomGateResult;
   }[];
   notes: { auth: string; walletVerification: string };
+}
+
+/** 決済フローの 1 段。バックエンドの実イベントに紐づく（演出ではない）。 */
+export interface CheckoutStepPayload {
+  step: 'challenge' | 'signed' | 'verified' | 'settled' | 'failed';
+  ok: boolean;
+  at: number;
+  detail: Record<string, unknown>;
+}
+
+export interface CheckoutResultPayload {
+  kind: 'result';
+  ok: boolean;
+  failure: { stage: string; reason: string } | null;
+  receipt: { id: string; itemId: string; quantity: number; amount: string } | null;
+  ledger: LedgerPayload | null;
+  standing: Standing | null;
+  settlement: Record<string, unknown> | null;
+}
+
+/**
+ * 物販デモの mock 決済（区分A）。NDJSON を読み、段階ごとに onStep を呼ぶ。
+ * 各段はバックエンドが実際にその処理を終えたときの結果。UI だけで成功を先に描かない。
+ * 事前確認（在庫・credits）で落ちると 400 を投げる（成功に見せない）。
+ */
+export async function checkout(
+  body: { itemId: string; quantity: number; buyerId?: string; simulateFailure?: 'verify' | 'settle' },
+  onStep: (step: CheckoutStepPayload) => void,
+): Promise<CheckoutResultPayload> {
+  const res = await fetch('/api/storefront/checkout', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    let message = `checkout が ${res.status} を返した`;
+    try {
+      const err = (await res.json()) as { message?: string };
+      if (err.message) message = err.message;
+    } catch {
+      /* 本文が JSON でない */
+    }
+    throw new Error(message);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: CheckoutResultPayload | null = null;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newline: number;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (line === '') continue;
+      const message = JSON.parse(line) as
+        | { kind: 'step'; step: CheckoutStepPayload }
+        | CheckoutResultPayload;
+      if (message.kind === 'step') onStep(message.step);
+      else result = message;
+    }
+  }
+  if (!result) throw new Error('checkout の結果が返らなかった（ストリームが途切れた）');
+  return result;
 }
 
 export interface CommissionBoardPayload {

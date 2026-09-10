@@ -46,6 +46,7 @@ npm run dev:server        # http://localhost:8787
 npm run dev:client        # http://localhost:5173（/api はサーバへプロキシ）
                           #   P キーで greybox ↔ stylized、?render=stylized で起動時から stylized
 npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し artifacts/ に画面を残す
+npm run smoke:payment     # 決済デモ（区分A・mock）。近づく→買う→決済フロー→反映 を録画（artifacts/payment-*.png）
 npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
 npm run assets:placeholders  # 要素種別ごとのダミー .glb を生成（実物ではない）
 npm run generate:tripo -- --slot wall  # Tripo で実 .glb を 1 個生成（区分B・要 TRIPO_API_KEY）
@@ -60,6 +61,21 @@ NA_WORLD_CONFIG=path/to/other.config.json npm run smoke
 
 クライアントの操作: クリックでポインタロック → WASD 移動 / マウス 視点 / Shift 走り / Esc 解除。
 stall の前に立つと、その品目の価格・在庫・進行中のショックが右上に出る。
+**stall の前で E → 購入 UI → Enter で決済**（`NA_X402_MOCK=1` のとき）。画面中央下の「x402 決済フロー」に
+`402 受信 → 支払い送信（mock 署名）→ payment_valid → 清算（mock 着金）`の 4 段が順に点灯し、
+清算まで通ると inventory / credits / standing が実値で動く。
+
+### 決済デモ（区分A・すべて mock）
+
+`NA_X402_MOCK=1` で立てると、物販購入の x402 一周が mock で走り、決済の各段が画面に出る（`packages/client/src/payment.ts`）。
+
+- **主役は決済の可視化。** 4 段はバックエンドの実イベント（`packages/server/src/x402/demo-checkout.ts`）に紐づく。UI だけで成功を先に描かない。
+- **mock を実物に見せない。** 画面に「mock settlement / 実チェーンではない」を常時表示。tx は `mock-tx-*`・`onChain:false`。偽の実 tx・偽の着金は出さない。
+- **fail-loud。** 検証・清算が落ちたら失敗として画面に出し（`?simulateFailure`）、手持ち・standing を動かさない（settle が通ったときだけ動く）。
+- **feePayer は動的。** 毎回 mock facilitator の `/supported` から取る（config にもソースにも持たない）。
+- **エージェント版（第2ビート）。** 代理エージェントの identity で同じフローが走る（`__na_debug.agentCheckout()`）。
+- 実署名・実チェーン着金は区分B（未消化）。`NA_X402_MOCK=1` が無ければ mock 署名口が無く、決済フローは立たない（偽の署名を作らない）。
+- 初期 credits・inventory 上限は `config/commission.config.json` の `storefront`（仮値）。credits の単位は `escrow.unit` と同じく未確定。
 
 ### API
 
@@ -72,7 +88,8 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `GET /api/commission/board` | 委託の一覧・escrow・係争・主/副モジュールの順位 |
 | `POST /api/commission/action` | 委託の操作（open / propose / agree / fund / leg / settle / refund / dispute / resolve） |
 | `GET /api/storefront/listing` | 物販（副モジュール）の品揃え。価格・在庫は M1 の市場状態 |
-| `POST /api/storefront/buy` | 物販の購入 |
+| `POST /api/storefront/buy` | 物販の購入（決済なしの直接記録・後方互換） |
+| `POST /api/storefront/checkout` | 物販デモの決済フロー（区分A・mock）。402→署名→payment_valid→清算 を NDJSON で段階配信し、settle が通ったときだけ手持ち・standing を動かす。`NA_X402_MOCK=1` で有効 |
 | `GET /api/presentation/config` | 見た目の設定（そのまま配るだけ。サーバは中身を解釈しない） |
 | `GET /api/adapters/status` | 外部接続の口（facilitator / MXE / ERC-8004 / DCW / チェーン）の状態。すべて未検証 |
 | `GET /api/agent/status` | モデル・キャッシュ・tick・予算・稼働前ゲートの判定（秘密は出さない） |

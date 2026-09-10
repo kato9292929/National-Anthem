@@ -36,6 +36,8 @@ import { createAdapterRegistry, type AdapterRegistry } from './adapters/registry
 import { evaluateGates, type GateResult } from './agent/gate.js';
 import { CommissionBoard } from './commission/board.js';
 import { GoodsStorefront } from './commission/storefront.js';
+import { PlayerLedger } from './store/ledger.js';
+import { DemoCheckout } from './x402/demo-checkout.js';
 import { loadMeasurement } from './agent/dry-run.js';
 import { createDelegatingMxe, createHttpMxeClient, createMockMxe, PrivateGateway } from './privacy/gateway.js';
 import { PaymentRecordStore } from './privacy/records.js';
@@ -78,6 +80,10 @@ export interface Runtime {
   commissionConfig: CommissionConfig;
   board: CommissionBoard;
   storefront: GoodsStorefront;
+  /** 買い手の手持ち（inventory / credits）。決済が settle まで通ったときだけ動く。 */
+  ledger: PlayerLedger;
+  /** 物販デモの x402 一周（区分A・mock）。NA_X402_MOCK=1 のときだけ立つ。 */
+  demoCheckout: DemoCheckout | null;
   /**
    * 認証は未実装（この段階の範囲外）。ローカルの単一 session identity を仮で立てる。
    * 複数プレイヤーの認証・セッション管理は別途。
@@ -186,6 +192,12 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     paymentRecords,
   });
   const storefront = new GoodsStorefront({ world: config, sim, log: eventLog });
+  const ledger = new PlayerLedger({ config: commissionConfig.storefront, log: eventLog });
+  // 物販デモの一周は mock でだけ回す（区分A）。鍵の要る実署名・実 facilitator は区分B。
+  const demoCheckout =
+    env.get('NA_X402_MOCK') === '1'
+      ? new DemoCheckout({ config: x402Config, railId: 'solana', signers: x402.signers, gateway })
+      : null;
 
   const agentConfig = loadAgentConfig(process.env).value;
   const agentGate = evaluateGates(agentConfig, loadMeasurement(agentConfig.run.measurementPath));
@@ -217,6 +229,8 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     commissionConfig,
     board,
     storefront,
+    ledger,
+    demoCheckout,
     localPlayerId: localPlayer.id,
   };
 }
@@ -283,6 +297,11 @@ export function printStartupLabels(runtime: Runtime): void {
   console.log('[x402] feePayer は 402 の /supported から動的取得（config に持たない）');
   console.log(
     `[x402] 資源のゲート: ${runtime.paywall.enabled ? '有効（commission settle / storefront buy）' : '無効（NA_X402_PAYWALL=1 で有効）'}`,
+  );
+  console.log(
+    `[x402] 物販デモ決済: ${runtime.demoCheckout ? 'mock 一周を配信（区分A・実チェーンには出ない）' : '無効（NA_X402_MOCK=1 で有効）'}` +
+      ` / 買い手の初期 credits ${runtime.commissionConfig.storefront.startingCredits}` +
+      `（${runtime.commissionConfig.storefront.confirmed ? '確定' : '仮値'}）`,
   );
   console.log(
     `[privacy] gateway mode=${runtime.gatewayMode}（実 MXE 投入は未検証・区分B） / ` +

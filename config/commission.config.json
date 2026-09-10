@@ -32,5 +32,11 @@
     "onRefundedForNonDelivery": { "agent": "counterparty_vanished" },
     "onDisputeResolved": { "winner": "dispute_won", "loser": "dispute_lost" },
     "confirmed": false
+  },
+  "storefront": {
+    "$comment": "物販デモ（区分A・mock 決済）の初期状態。精算単位が未確定なので credits も最小単位の整数として扱う。数値はすべて【仮値】。",
+    "startingCredits": 100000,
+    "inventoryCapacity": 12,
+    "confirmed": false
   }
 }

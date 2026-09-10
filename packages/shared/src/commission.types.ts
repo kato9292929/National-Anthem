@@ -1,4 +1,4 @@
-import { arr, bool, obj, str } from './guards.js';
+import { arr, bool, num, obj, str } from './guards.js';
 
 /**
  * M7: commission board（主モジュール）。
@@ -91,6 +91,14 @@ export interface CommissionConfig {
     onDisputeResolved: { winner: string; loser: string };
     confirmed: boolean;
   };
+  /** 物販デモ（副モジュール・区分A mock）の初期状態。数値は仮値。 */
+  storefront: {
+    /** 買い手の初期 credits。最小単位の整数（単位は escrow.unit と同じく TBD）。 */
+    startingCredits: number;
+    /** 手持ちの品数の上限。 */
+    inventoryCapacity: number;
+    confirmed: boolean;
+  };
 }
 
 export function validateCommissionConfig(input: unknown, source: string): CommissionConfig {
@@ -120,6 +128,16 @@ export function validateCommissionConfig(input: unknown, source: string): Commis
   const settled = obj(reputation['onSettled'], source, 'reputation.onSettled');
   const refunded = obj(reputation['onRefundedForNonDelivery'], source, 'reputation.onRefundedForNonDelivery');
   const resolved = obj(reputation['onDisputeResolved'], source, 'reputation.onDisputeResolved');
+  const storefront = obj(root['storefront'], source, 'storefront');
+
+  const startingCredits = num(storefront['startingCredits'], source, 'storefront.startingCredits');
+  if (!Number.isInteger(startingCredits) || startingCredits < 0) {
+    throw new Error(`${source}: storefront.startingCredits は 0 以上の整数（最小単位）`);
+  }
+  const inventoryCapacity = num(storefront['inventoryCapacity'], source, 'storefront.inventoryCapacity');
+  if (!Number.isInteger(inventoryCapacity) || inventoryCapacity <= 0) {
+    throw new Error(`${source}: storefront.inventoryCapacity は 1 以上の整数`);
+  }
 
   return {
     version: str(root['version'], source, 'version'),
@@ -162,6 +180,11 @@ export function validateCommissionConfig(input: unknown, source: string): Commis
         loser: str(resolved['loser'], source, 'reputation.onDisputeResolved.loser'),
       },
       confirmed: bool(reputation['confirmed'], source, 'reputation.confirmed'),
+    },
+    storefront: {
+      startingCredits,
+      inventoryCapacity,
+      confirmed: bool(storefront['confirmed'], source, 'storefront.confirmed'),
     },
   };
 }

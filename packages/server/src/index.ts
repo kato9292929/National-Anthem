@@ -1,5 +1,8 @@
 import { collectVerifiedFlags, unconfirmedPresentation, verificationSummary } from '@na/shared';
+import type { ReputationEventKind } from '@na/shared';
 import { runCommissionAction } from './commission/actions.js';
+import { runStorefrontCheckout } from './commission/checkout.js';
+import type { CheckoutStep } from './x402/demo-checkout.js';
 import { createHttpServer } from './http.js';
 import { createRuntime, printStartupLabels, resolveAssetsDir, resolveClientDist } from './runtime.js';
 
@@ -61,6 +64,44 @@ function main(): void {
         itemId: String(body['itemId'] ?? ''),
         quantity: Number(body['quantity'] ?? 1),
       }),
+    ledgerState: (buyerId) => runtime.ledger.state(buyerId),
+    storefrontCheckout: {
+      enabled: runtime.demoCheckout !== null,
+      run: async (body, onStep) => {
+        if (!runtime.demoCheckout) {
+          throw new Error('物販デモの mock 決済は無効（NA_X402_MOCK=1 で有効）');
+        }
+        const rawFail = String(body['simulateFailure'] ?? '');
+        const simulateFailure =
+          rawFail === 'verify' || rawFail === 'settle' ? (rawFail as 'verify' | 'settle') : undefined;
+        const outcome = await runStorefrontCheckout(
+          {
+            storefront: runtime.storefront,
+            ledger: runtime.ledger,
+            identity: runtime.identity,
+            demoCheckout: runtime.demoCheckout,
+            // 買い手（払った側）へ押す評判は config 由来。
+            settledReputationKind: runtime.commissionConfig.reputation.onSettled.principal as ReputationEventKind,
+          },
+          {
+            buyerId: String(body['buyerId'] ?? runtime.localPlayerId),
+            itemId: String(body['itemId'] ?? ''),
+            quantity: Number(body['quantity'] ?? 1),
+            resource: '/api/storefront/checkout',
+            ...(simulateFailure ? { simulateFailure } : {}),
+          },
+          (step: CheckoutStep) => onStep(step),
+        );
+        return {
+          ok: outcome.result.ok,
+          failure: outcome.result.failure,
+          receipt: outcome.receipt,
+          ledger: outcome.ledger,
+          standing: outcome.standing,
+          settlement: outcome.result.settlement,
+        };
+      },
+    },
     agentStatus: () => ({
       models: runtime.agentConfig.models,
       caching: runtime.agentConfig.caching,

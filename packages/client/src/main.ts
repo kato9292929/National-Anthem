@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { MarketState } from '@na/shared';
 import {
+  checkout,
   fetchCommissionBoard,
   fetchSession,
   fetchWorld,
@@ -10,6 +11,7 @@ import {
   type SessionPayload,
   type WorldPayload,
 } from './api.js';
+import { createPaymentUi, type BuyTarget } from './payment.js';
 import { FirstPersonController } from './controller.js';
 import { GREYBOX } from './greybox.js';
 import { createHud } from './hud.js';
@@ -64,6 +66,13 @@ interface DebugHandle {
   moveTo(x: number, z: number): void;
   position: () => { x: number; z: number };
   focusedCategoryId: () => string | null;
+  // 決済デモ（区分A・mock）。
+  checkout: (opts?: { quantity?: number; simulateFailure?: 'verify' | 'settle' }) => Promise<boolean>;
+  agentCheckout: (opts?: { quantity?: number }) => Promise<boolean>;
+  paymentSteps: () => { step: string; state: string }[];
+  paymentFlow: () => string;
+  ledger: () => { credits: number; held: number; capacity: number; provisional: boolean } | null;
+  setStepDelay: (ms: number) => void;
 }
 
 declare global {
@@ -114,6 +123,8 @@ async function main(): Promise<void> {
     .filter((room) => room.gate.required > 0)
     .map((room) => ({ roomId: room.id, label_ja: room.label_ja, required: room.gate.required }));
   const hud = createHud(hudRoot, world);
+  // 決済フローの可視化＋購入 UI（この画面の主役）。mock 決済（区分A）。
+  const paymentUi = createPaymentUi(hudRoot);
 
   // WebGL コンテキストが落ちたら黙って黒画面のままにしない。
   let contextLost = false;
@@ -296,6 +307,74 @@ async function main(): Promise<void> {
   let averageFrameMs = 0;
   let focused: StallObject | null = null;
 
+  // 焦点の stall と現在の市場価格から購入対象を組む（価格はサーバ由来）。
+  const targetFor = (stall: StallObject | null, quantity = 1): BuyTarget | null => {
+    if (!stall || !market) return null;
+    const line = market.states.find((s) => s.itemId === stall.slot.categoryId);
+    if (!line) return null;
+    return {
+      itemId: stall.slot.categoryId,
+      label: stall.slot.label_ja,
+      unitPrice: line.price,
+      quantity,
+      amount: Math.round(line.price * quantity),
+    };
+  };
+
+  // 決済フローを 1 本走らせる。段はバックエンドの実イベント。成功時のみ手持ち・standing が動く。
+  const runCheckout = async (input: {
+    target: BuyTarget;
+    buyerKind: 'human' | 'agent';
+    buyerId?: string;
+    simulateFailure?: 'verify' | 'settle';
+  }): Promise<void> => {
+    paymentUi.begin(input.target, input.buyerKind);
+    try {
+      const result = await checkout(
+        {
+          itemId: input.target.itemId,
+          quantity: input.target.quantity,
+          ...(input.buyerId ? { buyerId: input.buyerId } : {}),
+          ...(input.simulateFailure ? { simulateFailure: input.simulateFailure } : {}),
+        },
+        (step) => paymentUi.pushStep(step),
+      );
+      await paymentUi.finish(result);
+      // 人間の購入は session（ledger / standing）へ即反映されるよう引き直す。
+      if (input.buyerKind === 'human') {
+        try {
+          applySession(await fetchSession());
+        } catch (error) {
+          showError(`session を取得できない: ${(error as Error).message}`);
+        }
+      }
+    } catch (error) {
+      // 事前確認・ストリームの失敗は握りつぶさず画面に出す（成功に見せない）。
+      paymentUi.fail((error as Error).message);
+    }
+  };
+
+  // 購入インタラクション: stall の前で E → 購入 UI、Enter で決済、Q で取消。
+  window.addEventListener('keydown', (event) => {
+    if (event.code === 'KeyE') {
+      if (paymentUi.isBuyOpen() || paymentUi.isRunning()) return;
+      const target = targetFor(focused);
+      if (!target) return;
+      paymentUi.openBuy(target);
+      return;
+    }
+    if (event.code === 'Enter') {
+      if (!paymentUi.isBuyOpen()) return;
+      const target = paymentUi.buyTarget();
+      if (!target) return;
+      void runCheckout({ target, buyerKind: 'human' });
+      return;
+    }
+    if (event.code === 'KeyQ') {
+      if (paymentUi.isBuyOpen()) paymentUi.closeBuy();
+    }
+  });
+
   const frame = (now: number): void => {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
@@ -415,6 +494,38 @@ async function main(): Promise<void> {
       return { x: p.x, z: p.z };
     },
     focusedCategoryId: () => focused?.slot.categoryId ?? null,
+    checkout: async (opts) => {
+      const target = targetFor(focused ?? built.stalls[0] ?? null, opts?.quantity ?? 1);
+      if (!target) throw new Error('購入対象が決まらない（市場状態が未取得か stall が無い）');
+      await runCheckout({
+        target,
+        buyerKind: 'human',
+        ...(opts?.simulateFailure ? { simulateFailure: opts.simulateFailure } : {}),
+      });
+      return paymentUi.flowState() === 'ok';
+    },
+    agentCheckout: async (opts) => {
+      // 代理エージェントの identity を立てて、同じ決済フローを走らせる（第2ビート）。
+      const res = await fetch('/api/identity/agent', { method: 'POST' });
+      if (!res.ok) throw new Error(`agent identity を作れない: ${res.status}`);
+      const { agent } = (await res.json()) as { agent: { id: string } };
+      const target = targetFor(focused ?? built.stalls[0] ?? null, opts?.quantity ?? 1);
+      if (!target) throw new Error('購入対象が決まらない');
+      await runCheckout({ target, buyerKind: 'agent', buyerId: agent.id });
+      return paymentUi.flowState() === 'ok';
+    },
+    paymentSteps: () => paymentUi.stepStates(),
+    paymentFlow: () => paymentUi.flowState(),
+    ledger: () =>
+      session
+        ? {
+            credits: session.ledger.credits,
+            held: session.ledger.held,
+            capacity: session.ledger.capacity,
+            provisional: session.ledger.provisional,
+          }
+        : null,
+    setStepDelay: (ms: number) => paymentUi.setStepDelay(ms),
   } as DebugHandle;
 }
 

@@ -37,6 +37,12 @@ async function withServer<T>(fn: (base: string, sim: MarketSimulation) => Promis
     commissionAction: () => Promise.resolve({ ok: true }),
     storefrontListing: () => ({ rank: 'secondary' }),
     storefrontBuy: () => ({ ok: true }),
+    ledgerState: () => ({ credits: 0, inventory: [] }),
+    storefrontCheckout: {
+      enabled: false,
+      run: () =>
+        Promise.resolve({ ok: false, failure: null, receipt: null, ledger: null, standing: null, settlement: null }),
+    },
     port: 0,
   });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));

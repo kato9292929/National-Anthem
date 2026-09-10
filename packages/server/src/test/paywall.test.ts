@@ -159,6 +159,12 @@ async function withPaidServer<T>(
     commissionAction: () => Promise.resolve({ ok: true }),
     storefrontListing: () => ({ items: [] }),
     storefrontBuy: () => ({ ok: true, paid: true }),
+    ledgerState: () => ({ credits: 0, inventory: [] }),
+    storefrontCheckout: {
+      enabled: false,
+      run: () =>
+        Promise.resolve({ ok: false, failure: null, receipt: null, ledger: null, standing: null, settlement: null }),
+    },
     paywall: {
       enabled: paywall.enabled,
       headerName: config.protocol.paymentHeader,

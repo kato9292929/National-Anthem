@@ -51,8 +51,8 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
     <section class="panel" id="panel-focus"><h2>stall</h2><div id="focus-body" class="dim">通路を歩いて stall の前に立つ</div></section>
     <section class="panel" id="panel-hud">
       <h2>${escapeHtml(world.names.market.display)}<span class="dim"> / ${escapeHtml(world.names.district.display)}</span></h2>
-      <div class="row"><span>inventory</span><span><span id="hud-inventory"></span> <span class="tag">仮値</span></span></div>
-      <div class="row"><span>credits</span><span><span id="hud-credits"></span> <span class="tag">仮値</span></span></div>
+      <div class="row"><span>inventory</span><span><span id="hud-inventory"></span> <span class="tag" id="hud-inventory-tag">mock</span></span></div>
+      <div class="row"><span>credits</span><span><span id="hud-credits"></span> <span class="tag" id="hud-credits-tag">mock</span></span></div>
       <div class="row"><span>接続エージェント</span><span><span id="hud-agents"></span> <span class="tag">仮値</span></span></div>
     </section>
     <section class="panel" id="panel-identity">
@@ -81,8 +81,8 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
   const tbody = root.querySelector<HTMLElement>('#market-table tbody');
   if (!tbody) throw new Error('HUD の要素が無い: market-table');
 
-  el('hud-inventory').textContent = `${PLACEHOLDER_HUD.inventorySlots}/${PLACEHOLDER_HUD.inventoryCapacity}`;
-  el('hud-credits').textContent = String(PLACEHOLDER_HUD.credits);
+  el('hud-inventory').textContent = '—';
+  el('hud-credits').textContent = '—';
   el('hud-agents').textContent = String(PLACEHOLDER_HUD.connectedAgents);
   el('stat-unconfirmed').textContent = '計測中';
 
@@ -120,6 +120,15 @@ export function createHud(root: HTMLElement, world: WorldPayload): HudHandles {
           .join('');
         el('market-tick').textContent = `tick ${market.tick}${stale ? '（更新停止）' : ''}`;
         el('market-seed').textContent = `seed ${market.seed}`;
+      }
+
+      // inventory / credits は決済が settle まで通ったときの実値（mock 決済）。仮値ではない。
+      if (session) {
+        const ledger = session.ledger;
+        el('hud-inventory').textContent = `${ledger.held}/${ledger.capacity}`;
+        el('hud-credits').textContent = String(ledger.credits);
+        // 単位が未確定なら credits タグに残す。
+        el('hud-credits-tag').textContent = ledger.provisional ? 'mock/単位仮' : 'mock';
       }
 
       el('focus-body').innerHTML = renderFocus(payload, market, focused);

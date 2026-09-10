@@ -33,6 +33,19 @@ export interface HttpOptions {
   commissionAction: (body: Record<string, unknown>) => Promise<unknown>;
   storefrontListing: () => unknown;
   storefrontBuy: (body: Record<string, unknown>) => unknown;
+  /** 買い手の手持ち（credits / inventory）。session に載せる。 */
+  ledgerState: (buyerId: string) => unknown;
+  /**
+   * 物販デモの x402 決済フロー（区分A・mock）。
+   * 段階ごとの実イベントを onStep で流し、最後に結果を返す。無効なら enabled:false。
+   */
+  storefrontCheckout: {
+    enabled: boolean;
+    run(
+      body: Record<string, unknown>,
+      onStep: (step: unknown) => void,
+    ): Promise<{ ok: boolean; failure: unknown; receipt: unknown; ledger: unknown; standing: unknown; settlement: unknown }>;
+  };
   port: number;
   /** 指定すると同一オリジンでクライアントの静的ファイルを配信する。 */
   clientDist?: string | undefined;
@@ -64,6 +77,7 @@ export function createHttpServer(options: HttpOptions) {
       wallets: identity.walletsOf(localPlayerId),
       standing: identity.standing(localPlayerId),
       reputation: identity.reputationOf(localPlayerId),
+      ledger: options.ledgerState(localPlayerId),
       rooms: roomsConfig.rooms.map((room) => ({
         id: room.id,
         label_ja: room.label_ja,
@@ -170,6 +184,20 @@ export function createHttpServer(options: HttpOptions) {
         return;
       }
 
+      case 'POST /api/storefront/checkout': {
+        // 物販デモの決済フロー（区分A・mock）。段階を NDJSON で流す。
+        const body = (await readJson(req)) as Record<string, unknown>;
+        if (!options.storefrontCheckout.enabled) {
+          sendJson(res, 400, {
+            error: 'checkout_disabled',
+            message: '物販デモの mock 決済は無効。NA_X402_MOCK=1 で有効になる（区分A）',
+          });
+          return;
+        }
+        await streamCheckout(res, body, options.storefrontCheckout.run);
+        return;
+      }
+
       case 'GET /api/agent/status':
         sendJson(res, 200, options.agentStatus());
         return;
@@ -250,6 +278,59 @@ export function createHttpServer(options: HttpOptions) {
   }
 
   return server;
+}
+
+/**
+ * 決済フローを NDJSON（1 行 1 イベント）で流す。各行は実際の処理の結果に紐づく。
+ * 事前確認（在庫・credits・容量）で落ちたら、まだ本文を書いていないので 400 を返す。
+ * ストリーム開始後の失敗（検証・清算）は failed 行として流し、成功に見せない。
+ */
+async function streamCheckout(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  run: (
+    body: Record<string, unknown>,
+    onStep: (step: unknown) => void,
+  ) => Promise<{ ok: boolean; failure: unknown; receipt: unknown; ledger: unknown; standing: unknown; settlement: unknown }>,
+): Promise<void> {
+  let started = false;
+  const start = (): void => {
+    if (started) return;
+    started = true;
+    res.writeHead(200, {
+      'content-type': 'application/x-ndjson; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-accel-buffering': 'no',
+    });
+  };
+  const writeLine = (obj: unknown): void => {
+    start();
+    res.write(`${JSON.stringify(obj)}\n`);
+  };
+
+  try {
+    const outcome = await run(body, (step) => writeLine({ kind: 'step', step }));
+    writeLine({
+      kind: 'result',
+      ok: outcome.ok,
+      failure: outcome.failure,
+      receipt: outcome.receipt,
+      ledger: outcome.ledger,
+      standing: outcome.standing,
+      settlement: outcome.settlement,
+    });
+    res.end();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!started) {
+      // 事前確認で落ちた（在庫不足・credits 不足など）。まだ何も書いていない。
+      sendJson(res, 400, { error: 'checkout_precondition_failed', message });
+      return;
+    }
+    // ストリーム途中の例外。失敗として流して終える（握りつぶさない）。
+    writeLine({ kind: 'result', ok: false, failure: { stage: 'error', reason: message }, receipt: null, ledger: null, standing: null, settlement: null });
+    res.end();
+  }
 }
 
 function serveStatic(root: string, pathname: string, res: ServerResponse): boolean {
