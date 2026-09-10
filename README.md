@@ -382,13 +382,29 @@ Tripo はクレジットがリクエスト送信時に引かれる（失敗時�
 | メッシュ | `assets/meshes/national-anthem-ur-market.glb`（22,306 tri / 13 マテリアル / テクスチャなし） |
 | 由来 | **Blender 生成の手続きメッシュ**（建物列・ジッグラト・stall・壺・キャノピー・ナツメヤシの 1 シーン）。**仮の見た目・実写ではない**。placeholder ではないので `placeholder:false` |
 | 配置 | greybox の床 footprint に合わせて丸ごと fit（`fitToWorld`）。原点・向き・追加スケールは config |
-| 見た目 | 既定は unlit（`unlit:true`）で glb 本来の色をそのまま出す（景色の光量を絞っているため PBR のままだと沈む）。`stylizeOnTop:true` で stylized 上掛けも可 |
+| 見た目 | `unlit:false`（PBR）を**シーンの暖色ライト（sun ＋ fill）で灯す**。基準画像（暗い暖色）と同じ読み。環境表示中は stylized ポスプロを**素通し**にする（後述） |
 | 決済との関係 | 決済インタラクション（stall の当たり・E 購入）は greybox 側の位置に据え置き、環境メッシュは見た目だけを上に乗せる。stall の価格札は環境メッシュ時も残す |
-| トグル | `M` キーで greybox ↔ ur.glb。**greybox は消さない** |
+| トグル | `M` キーで greybox ↔ ur.glb。**greybox は消さない**（greybox 側は stylized ポスプロ有り、環境側は素通し） |
 | 録画 | `npm run smoke:payment` は ur.glb を差した状態で走り、「ウルの市場の中で決済が走る」画面を `artifacts/payment-*.png` に残す（`payment-00-greybox.png` は greybox 側） |
 
+**白飛びの切り分けと修正（診断ファースト）**: `ur.glb` を出した画面が白飛びし基準画像（暗い暖色）と食い違った不具合を、
+**推測で直さず実フレームの描画マトリクスで原因を確定**してから直した（`node scripts/env-matrix.mjs` で再現。`artifacts/diag-*.png`）。
+
+| 組み合わせ | マテリアル | ポスプロ | 読み |
+| --- | --- | --- | --- |
+| A | unlit | stylized | 白飛び（再現） |
+| B | PBR-lit | stylized | 黒潰れ |
+| C | PBR-lit | 素通し | **暗い暖色・構造可視（基準画像どおり）** |
+| D | unlit | 素通し | 白飛び |
+
+**確定した単一原因**: `unlit` 変換（フラットな全面最大輝度）。A/D どちらも白飛び。PBR-lit は素通しなら正しく灯る（C）が、
+greybox の自己発光シェーダ向けに調整した stylized ポスプロを PBR に掛けると黒潰れする（B）。基準画像も非スタイライズ。
+→ **修正は C**: 環境メッシュは `unlit:false`（PBR ＋ シーンの暖色ライト）で出し、表示中は stylized ポスプロを素通しにする
+（`PresentationLayer.setPostSuppressed`。greybox 側のポスプロは不変）。`smoke:payment` の全フレーム（歩行・接近・購入・決済・反映・エージェント）で白飛び・黒潰れなし。
+
 **fail-loud**: 読み込み失敗は画面に出し、greybox にフォールバックする（成功に見せない）。
-据え置き（今回やらない）: 要素種別ごとの精密な差し替え、実機での frame budget 確定。
+**frame budget（実機前提）**: headless（SwiftShader・386 draw call・ポスプロ無し）で ~80ms > 60ms。実機は別・超過は advisory。
+据え置き（今回やらない）: 要素種別ごとの精密な差し替え、環境メッシュの縦スケール調整、実機での frame budget 確定。
 
 ### 背景 splat（Marble / Atlas ブリッジ）
 

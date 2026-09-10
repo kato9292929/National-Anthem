@@ -80,6 +80,16 @@ export class FirstPersonController {
     for (const code of codes) this.keys.add(code);
   }
 
+  /** 固定の視点に置く（診断・録画の構図合わせ用）。yaw 0 は -Z を向く。 */
+  setView(x: number, z: number, yawDeg: number, pitchDeg: number): void {
+    this.position.set(x, GREYBOX.player.eyeHeight, z);
+    this.velocity.set(0, 0, 0);
+    this.yaw = (yawDeg * Math.PI) / 180;
+    const limit = Math.PI / 2 - 0.02;
+    this.pitch = Math.max(-limit, Math.min(limit, (pitchDeg * Math.PI) / 180));
+    this.apply();
+  }
+
   update(dt: number): void {
     const forward = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
     const strafe = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);

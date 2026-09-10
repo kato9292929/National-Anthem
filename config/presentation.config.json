@@ -199,7 +199,7 @@
     "textures": {},
     "meshes": {},
     "environment": {
-      "$comment": "ワールド全体の環境メッシュ（Blender 出力の 1 シーン）。placeholder:false の実メッシュだが、見た目は仮（Blender 手続きメッシュ・実写ではない）。M キーで greybox と切替。",
+      "$comment": "ワールド全体の環境メッシュ（Blender 出力の 1 シーン）。placeholder:false の実メッシュだが、見た目は仮（Blender 手続きメッシュ・実写ではない）。M キーで greybox と切替。unlit:false で PBR をシーンの暖色ライトで灯す（unlit だと白飛びするため。切り分け済み）。環境表示中は stylized ポスプロを素通しにして基準画像どおりの暗い暖色にする。",
       "url": "assets/meshes/national-anthem-ur-market.glb",
       "source": "Blender 生成（ウルの市場・建物列/ジッグラト/stall/壺/キャノピー/ナツメヤシの 1 シーン）。仮の見た目・実写ではない",
       "placeholder": false,
@@ -209,7 +209,7 @@
       "rotationDeg": { "x": 0, "y": 0, "z": 0 },
       "scale": 1.0,
       "stylizeOnTop": false,
-      "unlit": true
+      "unlit": false
     }
   },
   "performance": {

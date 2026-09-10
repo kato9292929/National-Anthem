@@ -36,6 +36,12 @@ export class PresentationLayer {
   private averageMs = 0;
   private exceeded = false;
   private warned = false;
+  /**
+   * ポスプロを一時的に止める。環境メッシュ（ur.glb・Blender の仕上がり）を出している間に使う。
+   * stylized のポスプロは greybox の自己発光シェーダ向けに調整してあり、PBR の環境に掛けると
+   * 白飛び／黒潰れする（切り分けで確認）。基準画像どおり素の暖色で出すため素通しにする。
+   */
+  private postSuppressed = false;
 
   constructor(private readonly options: PresentationLayerOptions) {
     this.currentMode = options.mode;
@@ -57,7 +63,22 @@ export class PresentationLayer {
   }
 
   get postprocessActive(): boolean {
-    return this.pipeline.active && this.options.config.postprocess.appliesTo.includes(this.currentMode);
+    return (
+      !this.postSuppressed &&
+      this.pipeline.active &&
+      this.options.config.postprocess.appliesTo.includes(this.currentMode)
+    );
+  }
+
+  /** ポスプロの素通しを切り替える（環境メッシュ表示中に使う）。 */
+  setPostSuppressed(suppressed: boolean): void {
+    if (this.postSuppressed === suppressed) return;
+    this.postSuppressed = suppressed;
+    this.resetBudget();
+  }
+
+  get isPostSuppressed(): boolean {
+    return this.postSuppressed;
   }
 
   get budgetMs(): number {

@@ -61,6 +61,8 @@ interface DebugHandle {
   environmentEnabled: () => boolean;
   setEnvironment: (on: boolean) => void;
   environmentStatus: () => unknown;
+  setEnvUnlit: (on: boolean) => void;
+  setView: (x: number, z: number, yawDeg: number, pitchDeg: number) => void;
   postPasses: () => string[];
   frameStats: () => { averageMs: number; budgetMs: number; exceeded: boolean };
   unconfirmedPresentation: () => string[];
@@ -224,9 +226,7 @@ async function main(): Promise<void> {
     if (event.code === 'KeyM') {
       if (hasEnv) {
         // 環境メッシュ（ur.glb）↔ greybox。greybox は消さない。
-        envOn = !envOn;
-        environment.setEnabled(envOn);
-        built.setStructureVisible(!envOn);
+        applyEnv(!envOn);
       } else {
         assetsOn = !assetsOn;
         built.applyMeshes(meshesBySlot, assetsOn);
@@ -276,8 +276,14 @@ async function main(): Promise<void> {
   });
   await environment.load();
   let envOn = hasEnv && environment.isEnabled;
-  environment.setEnabled(envOn);
-  built.setStructureVisible(!envOn);
+  // 環境メッシュを出している間は stylized ポスプロを素通しにする（PBR に掛けると白飛び／黒潰れ）。
+  const applyEnv = (on: boolean): void => {
+    envOn = on;
+    environment.setEnabled(on);
+    built.setStructureVisible(!on);
+    layer.setPostSuppressed(on && environment.isEnabled);
+  };
+  applyEnv(envOn);
 
   const applySession = (next: SessionPayload): void => {
     session = next;
@@ -502,11 +508,11 @@ async function main(): Promise<void> {
     environmentEnabled: () => environment.isEnabled,
     setEnvironment: (on: boolean) => {
       if (!hasEnv) return;
-      envOn = on;
-      environment.setEnabled(on);
-      built.setStructureVisible(!on);
+      applyEnv(on);
     },
     environmentStatus: () => environment.status(),
+    setEnvUnlit: (on: boolean) => environment.setUnlit(on),
+    setView: (x: number, z: number, yawDeg: number, pitchDeg: number) => controller.setView(x, z, yawDeg, pitchDeg),
     postPasses: () => layer.passIds,
     frameStats: () => layer.stats(),
     unconfirmedPresentation: () => unconfirmedList(presentation),

@@ -9,8 +9,8 @@ import type { EnvironmentAsset } from '@na/shared';
  * - greybox とはトグルで切り替える。決済インタラクション（stall の当たり・E 購入）は
  *   greybox 側の位置に据え置き、環境メッシュは見た目だけを上に乗せる（当たりは付けない）。
  * - 読み込み失敗は画面に出し、greybox にフォールバックする（成功に見せない）。
- * - Blender 本来のマテリアルをそのまま出す（stylizeOnTop で上掛けも選べる）。ポスプロは
- *   シーン全体に掛かるので、環境メッシュも前景と同じ絵作りになる。
+ * - 既定は Blender 本来の PBR マテリアルを、シーンの暖色ライト（sun ＋ fill）で灯す。
+ *   基準画像（暗い暖色のウル市場）と同じ読みにする。unlit へ変換すると陰影が消えて白飛びするので既定は使わない。
  */
 
 export interface EnvironmentStatus {
@@ -22,6 +22,9 @@ export interface EnvironmentStatus {
   triangles: number;
   fitToWorld: boolean;
   stylizeOnTop: boolean;
+  unlit: boolean;
+  /** fit 後のワールド bbox（診断用）。 */
+  box: { min: [number, number, number]; max: [number, number, number]; size: [number, number, number] };
   error: string | null;
 }
 
@@ -33,45 +36,6 @@ export interface EnvironmentLayerOptions {
   /** stylizeOnTop=true のとき上掛けするマテリアル。 */
   material?: THREE.Material;
   onError: (message: string) => void;
-}
-
-/**
- * glb のマテリアルを unlit（MeshBasic）へ変換する。
- * 各マテリアルの色（emissive があればそれを優先）をそのまま基本色に写す。
- * 景色の照明が暗くても Blender の色が確実に出る。glow のような発光マテリアルは明るいまま残る。
- */
-function toUnlit(root: THREE.Object3D): void {
-  const cache = new Map<THREE.Material, THREE.MeshBasicMaterial>();
-  const convert = (src: THREE.Material): THREE.MeshBasicMaterial => {
-    const cached = cache.get(src);
-    if (cached) return cached;
-    const std = src as THREE.MeshStandardMaterial;
-    // 色は glb 由来だけを写す。ソースに色リテラルは置かない（既定は three の白）。
-    const color = new THREE.Color();
-    // 発光マテリアル（glow など）は emissive を、それ以外は baseColor を写す。
-    if (std.emissive && (std.emissive.r > 0 || std.emissive.g > 0 || std.emissive.b > 0)) {
-      color.copy(std.emissive);
-    } else if (std.color) {
-      color.copy(std.color);
-    }
-    const basic = new THREE.MeshBasicMaterial({
-      color,
-      ...(std.map ? { map: std.map } : {}),
-      vertexColors: std.vertexColors ?? false,
-      transparent: src.transparent,
-      opacity: src.opacity,
-      side: src.side,
-    });
-    cache.set(src, basic);
-    return basic;
-  };
-  root.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    mesh.material = Array.isArray(mesh.material)
-      ? mesh.material.map((m) => convert(m))
-      : convert(mesh.material);
-  });
 }
 
 function countTriangles(object: THREE.Object3D): number {
@@ -92,10 +56,16 @@ export class EnvironmentLayer {
   private loaded = false;
   private error: string | null = null;
   private triangles = 0;
+  private unlit: boolean;
+  private box = new THREE.Box3();
+  /** unlit ↔ PBR を切り替えられるよう、読み込み時の元マテリアルを保持する。 */
+  private readonly originals = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+  private readonly unlitCache = new Map<THREE.Material, THREE.MeshBasicMaterial>();
 
   constructor(private readonly options: EnvironmentLayerOptions) {
     // 割り当てがあれば既定で環境メッシュ側を出す（greybox は M で戻せる）。
     this.enabled = options.config.url !== '';
+    this.unlit = options.config.unlit;
   }
 
   get isEnabled(): boolean {
@@ -115,15 +85,22 @@ export class EnvironmentLayer {
       const root = gltf.scene;
       this.triangles = countTriangles(root);
       this.fitToWorld(root);
+      this.box.setFromObject(root);
+
+      // 元マテリアルを控える（unlit 切替のため）。
+      root.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (mesh.isMesh) this.originals.set(mesh, mesh.material);
+      });
+
       if (c.stylizeOnTop && this.options.material) {
         const material = this.options.material;
         root.traverse((node) => {
           const mesh = node as THREE.Mesh;
           if (mesh.isMesh) mesh.material = material;
         });
-      } else if (c.unlit) {
-        // 景色の光量を絞っているため、PBR のままだと沈む。unlit にして Blender の色をそのまま出す。
-        toUnlit(root);
+      } else if (this.unlit) {
+        this.applyUnlit(root);
       }
       root.visible = this.enabled;
       this.options.scene.add(root);
@@ -136,6 +113,60 @@ export class EnvironmentLayer {
       this.enabled = false;
       this.loaded = false;
     }
+  }
+
+  /**
+   * glb のマテリアルを unlit（MeshBasic）へ変換する。
+   * 各マテリアルの色（emissive があればそれを優先）をそのまま基本色に写す。陰影は出ない。
+   */
+  private applyUnlit(root: THREE.Object3D): void {
+    const convert = (src: THREE.Material): THREE.MeshBasicMaterial => {
+      const cached = this.unlitCache.get(src);
+      if (cached) return cached;
+      const std = src as THREE.MeshStandardMaterial;
+      const color = new THREE.Color();
+      if (std.emissive && (std.emissive.r > 0 || std.emissive.g > 0 || std.emissive.b > 0)) {
+        color.copy(std.emissive);
+      } else if (std.color) {
+        color.copy(std.color);
+      }
+      const basic = new THREE.MeshBasicMaterial({
+        color,
+        ...(std.map ? { map: std.map } : {}),
+        vertexColors: std.vertexColors ?? false,
+        transparent: src.transparent,
+        opacity: src.opacity,
+        side: src.side,
+      });
+      this.unlitCache.set(src, basic);
+      return basic;
+    };
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const original = this.originals.get(mesh) ?? mesh.material;
+      mesh.material = Array.isArray(original) ? original.map((m) => convert(m)) : convert(original);
+    });
+  }
+
+  private restoreLit(root: THREE.Object3D): void {
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const original = this.originals.get(mesh);
+      if (original) mesh.material = original;
+    });
+  }
+
+  /** 診断用: unlit（フラット）と PBR（陰影あり）を切り替える。 */
+  setUnlit(on: boolean): void {
+    if (!this.root || this.unlit === on) {
+      this.unlit = on;
+      return;
+    }
+    this.unlit = on;
+    if (on) this.applyUnlit(this.root);
+    else this.restoreLit(this.root);
   }
 
   /** greybox の footprint に合わせて丸ごとスケール・配置する。 */
@@ -174,6 +205,8 @@ export class EnvironmentLayer {
   }
 
   status(): EnvironmentStatus {
+    const min = this.box.min;
+    const max = this.box.max;
     return {
       enabled: this.enabled,
       loaded: this.loaded,
@@ -183,6 +216,12 @@ export class EnvironmentLayer {
       triangles: this.triangles,
       fitToWorld: this.options.config.fitToWorld,
       stylizeOnTop: this.options.config.stylizeOnTop,
+      unlit: this.unlit,
+      box: {
+        min: [round(min.x), round(min.y), round(min.z)],
+        max: [round(max.x), round(max.y), round(max.z)],
+        size: [round(max.x - min.x), round(max.y - min.y), round(max.z - min.z)],
+      },
       error: this.error,
     };
   }
@@ -190,4 +229,8 @@ export class EnvironmentLayer {
   dispose(): void {
     if (this.root) this.options.scene.remove(this.root);
   }
+}
+
+function round(v: number): number {
+  return Math.round(v * 100) / 100;
 }
