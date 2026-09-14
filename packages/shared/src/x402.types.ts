@@ -33,6 +33,10 @@ export interface RailConfig {
   requiresFeePayer: boolean;
   /** v1 leg の network 名（現行クライアントが掴むのはこちら）。未確定なら "TBD"。 */
   networkV1: string;
+  /** testnet レールか。画面に testnet と明示し、mainnet と誤認させないために持つ。 */
+  testnet?: boolean;
+  /** tx エクスプローラの URL 接頭辞（末尾に tx hash を足す）。実 tx を画面から辿れるように。 */
+  explorer?: string;
 }
 
 export interface X402Config {
@@ -132,6 +136,8 @@ export function validateX402Config(input: unknown, source: string): X402Config {
       verified: bool(o['verified'], source, `rails[${i}].verified`),
       requiresFeePayer: bool(o['requiresFeePayer'], source, `rails[${i}].requiresFeePayer`),
       networkV1: str(o['networkV1'], source, `rails[${i}].networkV1`),
+      ...(o['testnet'] === undefined ? {} : { testnet: bool(o['testnet'], source, `rails[${i}].testnet`) }),
+      ...(o['explorer'] === undefined ? {} : { explorer: str(o['explorer'], source, `rails[${i}].explorer`) }),
       eip712Domain:
         domain === null
           ? null

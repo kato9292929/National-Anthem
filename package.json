@@ -21,6 +21,7 @@
     "dev:client": "npm run dev -w @na/client",
     "smoke": "node scripts/smoke.mjs",
     "smoke:payment": "node scripts/payment-smoke.mjs",
+    "smoke:testnet": "node scripts/testnet-smoke.mjs",
     "agent:dry-run": "npm run agent:dry-run -w @na/server",
     "smoke:swap": "node scripts/config-swap-smoke.mjs",
     "verify:b": "node scripts/verify-b.mjs",

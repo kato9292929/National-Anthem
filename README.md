@@ -48,6 +48,7 @@ npm run dev:client        # http://localhost:5173（/api はサーバへプロ�
                           #   P キーで greybox ↔ stylized、M キーで greybox ↔ ur.glb（ウルの市場）、?render=stylized
 npm run smoke             # Chromium で M2/M3/M7 の受け入れを確認し artifacts/ に画面を残す
 npm run smoke:payment     # 決済デモ（区分A・mock）。近づく→買う→決済フロー→反映 を録画（artifacts/payment-*.png）
+npm run smoke:testnet     # 決済デモ（区分B・Base Sepolia 実 tx）。要 testnet 鍵/facilitator/RPC。docs/testnet-base-sepolia-runbook.md
 npm run smoke:swap        # 別 config ツリーで同じ smoke を通す（ソース修正なしで反映されるか）
 npm run assets:placeholders  # 要素種別ごとのダミー .glb を生成（実物ではない）
 npm run generate:tripo -- --slot wall  # Tripo で実 .glb を 1 個生成（区分B・要 TRIPO_API_KEY）
@@ -75,8 +76,21 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 - **fail-loud。** 検証・清算が落ちたら失敗として画面に出し（`?simulateFailure`）、手持ち・standing を動かさない（settle が通ったときだけ動く）。
 - **feePayer は動的。** 毎回 mock facilitator の `/supported` から取る（config にもソースにも持たない）。
 - **エージェント版（第2ビート）。** 代理エージェントの identity で同じフローが走る（`__na_debug.agentCheckout()`）。
-- 実署名・実チェーン着金は区分B（未消化）。`NA_X402_MOCK=1` が無ければ mock 署名口が無く、決済フローは立たない（偽の署名を作らない）。
 - 初期 credits・inventory 上限は `config/commission.config.json` の `storefront`（仮値）。credits の単位は `escrow.unit` と同じく未確定。
+
+### 実 testnet 決済（Base Sepolia・区分B）
+
+mock の決済フローを、Base Sepolia（testnet）＋ faucet で実チェーンに通す。**実 tx を 1 件**出す。実弾不要。mainnet は対象外。
+手順は **docs/testnet-base-sepolia-runbook.md**（faucet・egress・env・証拠記録）。
+
+- **差し替えは settle の中身だけ**。決済フローの画面（4 段・購入 UI・HUD）は不変。mock → 実 tx。
+- **署名は公式 SDK に委ねる**（`@x402/fetch` + `@x402/evm`。`packages/server/src/x402/sdk-payer.ts`）。EIP-712 TransferWithAuthorization の payload も domain も自前で組まない・推測しない。
+- **払う先は自分の paywall 資源**（`GET /api/x402/paid-resource`。`NA_X402_PAYWALL=1`）。検証・清算は実 facilitator（`NA_X402_FACILITATOR_URL`）。feePayer は 402 の `extra.feePayer` から動的取得。
+- レールは `config/x402.config.json` の `base-sepolia`（chainId 84532・testnet USDC）。`payTo` を入れて `confirmed:true` にすると回せる（区分A では `confirmed:false` のまま＝立たない）。
+- 画面は **「Base Sepolia testnet」** と明示（banner が緑）。実 tx hash はそのまま（`mock:` を付けない）、エクスプローラ（basescan sepolia）へのリンク付き。
+- **fail-loud**: 鍵・facilitator・確定 rail のどれかが欠ければ失敗として画面に出す（偽署名・偽 tx を作らない）。
+- **verified の扱い**: 実 tx が着金・確認できるまで `verified:false`。`NA_VERIFY_BASE_SEPOLIA_TX=<tx> npm run verify:b` が RPC の receipt（status 0x1）を確認できたときだけ `config/verification-evidence.json` に証拠を追記し、`x402.rails.base-sepolia` を `verified:true` にできる（証拠が無い true は起動時に落ちる）。
+- 実行: `npm run smoke:testnet`（人間の購入 1 件・録画つき）。エージェント版は人間版が通ってから（今回やらない）。
 
 ### API
 
@@ -90,7 +104,9 @@ stall の前に立つと、その品目の価格・在庫・進行中のショ�
 | `POST /api/commission/action` | 委託の操作（open / propose / agree / fund / leg / settle / refund / dispute / resolve） |
 | `GET /api/storefront/listing` | 物販（副モジュール）の品揃え。価格・在庫は M1 の市場状態 |
 | `POST /api/storefront/buy` | 物販の購入（決済なしの直接記録・後方互換） |
-| `POST /api/storefront/checkout` | 物販デモの決済フロー（区分A・mock）。402→署名→payment_valid→清算 を NDJSON で段階配信し、settle が通ったときだけ手持ち・standing を動かす。`NA_X402_MOCK=1` で有効 |
+| `POST /api/storefront/checkout` | 物販デモの決済フロー。402→署名→payment_valid→清算 を NDJSON で段階配信し、settle が通ったときだけ手持ち・standing を動かす。`NA_X402_MOCK=1`（mock）／`NA_X402_TESTNET=1`（実 Base Sepolia）で有効 |
+| `GET /api/checkout/status` | 決済モード（mock / testnet / 無効）・network・エクスプローラ。画面のラベルに使う |
+| `GET /api/x402/paid-resource` | testnet 決済の払い先（自分の paywall 資源）。未払いは 402、払い済みは settle 結果ヘッダ付きで 200 |
 | `GET /api/presentation/config` | 見た目の設定（そのまま配るだけ。サーバは中身を解釈しない） |
 | `GET /api/adapters/status` | 外部接続の口（facilitator / MXE / ERC-8004 / DCW / チェーン）の状態。すべて未検証 |
 | `GET /api/agent/status` | モデル・キャッシュ・tick・予算・稼働前ゲートの判定（秘密は出さない） |

@@ -38,6 +38,7 @@ async function withServer<T>(fn: (base: string, sim: MarketSimulation) => Promis
     storefrontListing: () => ({ rank: 'secondary' }),
     storefrontBuy: () => ({ ok: true }),
     ledgerState: () => ({ credits: 0, inventory: [] }),
+    checkoutStatus: () => ({ enabled: false, mode: 'disabled' }),
     storefrontCheckout: {
       enabled: false,
       run: () =>

@@ -22,6 +22,53 @@ const privacy = JSON.parse(readFileSync('config/privacy.config.json', 'utf8'));
 const env = process.env;
 const solanaRail = x402.rails.find((r) => r.id === 'solana');
 const baseRail = x402.rails.find((r) => r.id === 'base');
+const baseSepoliaRail = x402.rails.find((r) => r.id === 'base-sepolia');
+
+/**
+ * Base Sepolia の実 tx を RPC の receipt で確認する。
+ * status 0x1（成功）でなければ証拠を作らない。到達できない・未確認は空を返す（偽の着金にしない）。
+ * tx hash は NA_VERIFY_BASE_SEPOLIA_TX で渡す（実 settle で出た hash）。
+ */
+async function confirmBaseSepoliaTx() {
+  const rpc = env['NA_BASE_SEPOLIA_RPC_URL'];
+  const tx = env['NA_VERIFY_BASE_SEPOLIA_TX'];
+  if (!rpc || !tx) return { records: [], detail: 'NA_BASE_SEPOLIA_RPC_URL / NA_VERIFY_BASE_SEPOLIA_TX が要る' };
+  const res = await fetch(rpc, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: [tx] }),
+  });
+  if (!res.ok) throw new Error(`RPC が ${res.status} を返した`);
+  const body = await res.json();
+  const receipt = body.result;
+  if (!receipt) return { records: [], detail: `receipt がまだ無い（未確認）: ${tx}` };
+  if (receipt.status !== '0x1') return { records: [], detail: `tx が成功していない（status ${receipt.status}）: ${tx}` };
+  const at = new Date().toISOString();
+  const evidence = { txHash: tx, blockNumber: String(receipt.blockNumber ?? ''), rpc };
+  return {
+    detail: `確認: ${tx} @ block ${receipt.blockNumber}`,
+    records: [
+      {
+        target: 'x402.rails.base-sepolia',
+        kind: 'settlement',
+        at,
+        network: baseSepoliaRail?.network ?? 'eip155:84532',
+        evidence,
+        observedBy: 'verify:b / eth_getTransactionReceipt',
+        note: 'Base Sepolia testnet の実 settle（faucet の testnet USDC）。実弾ではない',
+      },
+      {
+        target: 'x402.facilitator',
+        kind: 'settlement',
+        at,
+        network: baseSepoliaRail?.network ?? 'eip155:84532',
+        evidence,
+        observedBy: 'verify:b / eth_getTransactionReceipt',
+        note: 'facilitator 経由の testnet settle が実 tx として確認できた',
+      },
+    ],
+  };
+}
 
 /**
  * 段の定義。requires が 1 つでも欠けたら run しない（推測で埋めない）。
@@ -52,8 +99,21 @@ const STAGES = [
     },
   },
   {
+    id: 'settlement-base-sepolia',
+    title: '1a. Base Sepolia（testnet）の実着金',
+    targets: ['x402.rails.base-sepolia', 'x402.facilitator'],
+    requires: {
+      // 実弾不要。faucet の testnet USDC/gas で回す。実 tx hash を receipt で確認する。
+      env: ['NA_EVM_PRIVATE_KEY', 'NA_BASE_SEPOLIA_RPC_URL', 'NA_VERIFY_BASE_SEPOLIA_TX'],
+      hosts: [x402.facilitator.url],
+      spec: baseSepoliaRail && baseSepoliaRail.payTo !== 'TBD' ? [] : ['Base Sepolia の payTo（testnet 受取先）が未指定'],
+      stages: [],
+    },
+    execute: confirmBaseSepoliaTx,
+  },
+  {
     id: 'settlement-base',
-    title: '1b. Base レールの着金',
+    title: '1b. Base（mainnet）レールの着金',
     targets: ['x402.rails.base'],
     requires: {
       env: ['NA_EVM_PRIVATE_KEY'],
@@ -161,8 +221,40 @@ async function main() {
   for (const stage of STAGES) {
     const blockers = await evaluate(stage, done);
     if (blockers.length === 0) {
-      // ここに来たら実行できる。実行結果から証拠を作る段を書く場所。
-      // 現時点ではどの段もここへ到達しないため、実行本体は未実装のまま残す。
+      // 要件が揃っている。execute があれば実行し、実結果から証拠を作る。
+      if (typeof stage.execute === 'function') {
+        try {
+          const outcome = await stage.execute();
+          if (outcome.records.length > 0) {
+            newEvidence.push(...outcome.records);
+            done.add(stage.id);
+            results.push({ stage: stage.id, title: stage.title, status: 'verified', blockers: [], targets: stage.targets });
+            console.log(`ok      ${stage.title} — ${outcome.detail}`);
+          } else {
+            results.push({
+              stage: stage.id,
+              title: stage.title,
+              status: 'blocked',
+              blockers: [{ kind: 'unconfirmed', detail: outcome.detail }],
+              targets: stage.targets,
+            });
+            console.log(`blocked ${stage.title}`);
+            console.log(`        [unconfirmed] ${outcome.detail}`);
+          }
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          results.push({
+            stage: stage.id,
+            title: stage.title,
+            status: 'blocked',
+            blockers: [{ kind: 'error', detail }],
+            targets: stage.targets,
+          });
+          console.log(`blocked ${stage.title}`);
+          console.log(`        [error] ${detail}`);
+        }
+        continue;
+      }
       results.push({ stage: stage.id, title: stage.title, status: 'ready', blockers: [], targets: stage.targets });
       console.log(`ready   ${stage.title}`);
       console.log('        要件は揃っている。実行本体は実環境で書き足す（このハーネスは証拠のみを記録する）');

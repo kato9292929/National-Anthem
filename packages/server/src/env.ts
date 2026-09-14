@@ -88,6 +88,34 @@ export const ENV_SPECS: EnvSpec[] = [
     fallback: '0',
   },
   {
+    key: 'NA_X402_TESTNET',
+    description:
+      '1 で物販デモを実 testnet（Base Sepolia）で settle する（区分B）。実 facilitator・EVM 鍵・確定した base-sepolia rail が要る。mock ではなく実 tx が出る。',
+    requiredFrom: 'M7',
+    provisional: false,
+    secret: false,
+    example: '0',
+    fallback: '0',
+  },
+  {
+    key: 'NA_X402_RAIL',
+    description:
+      'paywall / 決済で使うレール id（config の rails[].id）。既定 solana。testnet は base-sepolia。',
+    requiredFrom: 'M7',
+    provisional: false,
+    secret: false,
+    example: 'base-sepolia',
+    fallback: 'solana',
+  },
+  {
+    key: 'NA_BASE_SEPOLIA_RPC_URL',
+    description: '[区分B] Base Sepolia の RPC。実 tx の確認（receipt 照会）に使う。egress allowlist に追加する。',
+    requiredFrom: 'M7',
+    provisional: false,
+    secret: false,
+    example: 'https://sepolia.base.org',
+  },
+  {
     key: 'NA_SOLANA_PRIVATE_KEY',
     description: '[区分B] Solana の署名鍵（base58 の 64 byte keypair）。公式 SDK に渡す。',
     requiredFrom: 'M4',

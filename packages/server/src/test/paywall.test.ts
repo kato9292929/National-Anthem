@@ -160,6 +160,7 @@ async function withPaidServer<T>(
     storefrontListing: () => ({ items: [] }),
     storefrontBuy: () => ({ ok: true, paid: true }),
     ledgerState: () => ({ credits: 0, inventory: [] }),
+    checkoutStatus: () => ({ enabled: false, mode: 'disabled' }),
     storefrontCheckout: {
       enabled: false,
       run: () =>

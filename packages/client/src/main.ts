@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { MarketState } from '@na/shared';
 import {
   checkout,
+  fetchCheckoutStatus,
   fetchCommissionBoard,
   fetchSession,
   fetchWorld,
@@ -129,8 +130,14 @@ async function main(): Promise<void> {
     .filter((room) => room.gate.required > 0)
     .map((room) => ({ roomId: room.id, label_ja: room.label_ja, required: room.gate.required }));
   const hud = createHud(hudRoot, world);
-  // 決済フローの可視化＋購入 UI（この画面の主役）。mock 決済（区分A）。
+  // 決済フローの可視化＋購入 UI（この画面の主役）。mock（区分A）／実 testnet（区分B）。
   const paymentUi = createPaymentUi(hudRoot);
+  // 決済モードを反映（banner・見出し・段ラベル・tx 表示を mock/testnet で切替）。無効でも起動は続ける。
+  try {
+    paymentUi.setMode(await fetchCheckoutStatus());
+  } catch (error) {
+    showError(`決済モードを取得できない: ${(error as Error).message}`);
+  }
 
   // WebGL コンテキストが落ちたら黙って黒画面のままにしない。
   let contextLost = false;

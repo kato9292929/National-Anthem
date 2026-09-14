@@ -37,7 +37,9 @@ import { evaluateGates, type GateResult } from './agent/gate.js';
 import { CommissionBoard } from './commission/board.js';
 import { GoodsStorefront } from './commission/storefront.js';
 import { PlayerLedger } from './store/ledger.js';
-import { DemoCheckout } from './x402/demo-checkout.js';
+import { DemoCheckout, type Checkout } from './x402/demo-checkout.js';
+import { TestnetCheckout } from './x402/testnet-checkout.js';
+import { sdkPayerEnvFrom } from './x402/sdk-payer.js';
 import { loadMeasurement } from './agent/dry-run.js';
 import { createDelegatingMxe, createHttpMxeClient, createMockMxe, PrivateGateway } from './privacy/gateway.js';
 import { PaymentRecordStore } from './privacy/records.js';
@@ -82,8 +84,10 @@ export interface Runtime {
   storefront: GoodsStorefront;
   /** 買い手の手持ち（inventory / credits）。決済が settle まで通ったときだけ動く。 */
   ledger: PlayerLedger;
-  /** 物販デモの x402 一周（区分A・mock）。NA_X402_MOCK=1 のときだけ立つ。 */
-  demoCheckout: DemoCheckout | null;
+  /** 物販デモの決済一周。mock（NA_X402_MOCK=1）／実 testnet（NA_X402_TESTNET=1）／無効。 */
+  checkout: Checkout | null;
+  /** 決済モード。画面に mock / Base Sepolia testnet を明示するために配る。 */
+  checkoutMode: 'mock' | 'testnet' | 'disabled';
   /**
    * 認証は未実装（この段階の範囲外）。ローカルの単一 session identity を仮で立てる。
    * 複数プレイヤーの認証・セッション管理は別途。
@@ -174,9 +178,11 @@ export function createRuntime(cwd = process.cwd()): Runtime {
       'NA_X402_PAYWALL=1 だが検証・settle の相手がいない。NA_X402_FACILITATOR_URL か NA_ARCIUM_CLUSTER_URL を設定する',
     );
   }
+  // 決済で使うレール（config の rails[].id）。既定 solana、testnet は base-sepolia。
+  const paywallRailId = env.get('NA_X402_RAIL') ?? 'solana';
   const paywall = new Paywall({
     config: x402Config,
-    railId: 'solana',
+    railId: paywallRailId,
     feePayer: new FeePayerResolver(x402Config, facilitatorClient),
     facilitator: facilitatorClient,
     gateway,
@@ -193,11 +199,30 @@ export function createRuntime(cwd = process.cwd()): Runtime {
   });
   const storefront = new GoodsStorefront({ world: config, sim, log: eventLog });
   const ledger = new PlayerLedger({ config: commissionConfig.storefront, log: eventLog });
-  // 物販デモの一周は mock でだけ回す（区分A）。鍵の要る実署名・実 facilitator は区分B。
-  const demoCheckout =
-    env.get('NA_X402_MOCK') === '1'
-      ? new DemoCheckout({ config: x402Config, railId: 'solana', signers: x402.signers, gateway })
-      : null;
+  // 決済一周: 実 testnet（区分B）＞ mock（区分A）＞ 無効。
+  // testnet は自分の paywall を資源にするので、paywall（＝実 facilitator）が要る。
+  const testnetRequested = env.get('NA_X402_TESTNET') === '1';
+  if (testnetRequested && !paywallRequested) {
+    throw new Error(
+      'NA_X402_TESTNET=1 には NA_X402_PAYWALL=1 が要る（払う先の資源が自分の paywall。実 facilitator も要る）',
+    );
+  }
+  let checkout: Checkout | null = null;
+  let checkoutMode: 'mock' | 'testnet' | 'disabled' = 'disabled';
+  if (testnetRequested) {
+    const port = env.get('NA_SERVER_PORT') ?? '8787';
+    checkout = new TestnetCheckout({
+      config: x402Config,
+      railId: paywallRailId,
+      sdkEnv: sdkPayerEnvFrom(process.env),
+      // 払う先は自分の paywall 資源（ループバック）。
+      resourceUrl: `http://127.0.0.1:${port}/api/x402/paid-resource`,
+    });
+    checkoutMode = 'testnet';
+  } else if (env.get('NA_X402_MOCK') === '1') {
+    checkout = new DemoCheckout({ config: x402Config, railId: 'solana', signers: x402.signers, gateway });
+    checkoutMode = 'mock';
+  }
 
   const agentConfig = loadAgentConfig(process.env).value;
   const agentGate = evaluateGates(agentConfig, loadMeasurement(agentConfig.run.measurementPath));
@@ -230,7 +255,8 @@ export function createRuntime(cwd = process.cwd()): Runtime {
     board,
     storefront,
     ledger,
-    demoCheckout,
+    checkout,
+    checkoutMode,
     localPlayerId: localPlayer.id,
   };
 }
@@ -298,8 +324,15 @@ export function printStartupLabels(runtime: Runtime): void {
   console.log(
     `[x402] 資源のゲート: ${runtime.paywall.enabled ? '有効（commission settle / storefront buy）' : '無効（NA_X402_PAYWALL=1 で有効）'}`,
   );
+  const checkoutRail = runtime.x402Config.rails.find((r) => r.id === (process.env['NA_X402_RAIL'] ?? 'solana'));
   console.log(
-    `[x402] 物販デモ決済: ${runtime.demoCheckout ? 'mock 一周を配信（区分A・実チェーンには出ない）' : '無効（NA_X402_MOCK=1 で有効）'}` +
+    `[x402] 物販デモ決済: ${
+      runtime.checkoutMode === 'testnet'
+        ? `実 testnet（${checkoutRail?.network ?? '?'}・実チェーンに tx を出す・区分B）`
+        : runtime.checkoutMode === 'mock'
+          ? 'mock 一周を配信（区分A・実チェーンには出ない）'
+          : '無効（NA_X402_MOCK=1／NA_X402_TESTNET=1 で有効）'
+    }` +
       ` / 買い手の初期 credits ${runtime.commissionConfig.storefront.startingCredits}` +
       `（${runtime.commissionConfig.storefront.confirmed ? '確定' : '仮値'}）`,
   );

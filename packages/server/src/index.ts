@@ -65,11 +65,31 @@ function main(): void {
         quantity: Number(body['quantity'] ?? 1),
       }),
     ledgerState: (buyerId) => runtime.ledger.state(buyerId),
+    checkoutStatus: () => {
+      const railId = process.env['NA_X402_RAIL'] ?? 'solana';
+      const rail = runtime.x402Config.rails.find((r) => r.id === railId);
+      return {
+        enabled: runtime.checkout !== null,
+        mode: runtime.checkoutMode,
+        rail: railId,
+        network: rail?.network ?? null,
+        testnet: rail?.testnet === true,
+        assetLabel: rail?.assetLabel ?? null,
+        explorer: rail?.explorer ?? null,
+        // 画面に出すラベル。mainnet と誤認させない。
+        label:
+          runtime.checkoutMode === 'testnet'
+            ? `${rail?.assetLabel ?? 'testnet'}（実 tx・${rail?.network ?? ''}）`
+            : runtime.checkoutMode === 'mock'
+              ? 'mock settlement（実チェーンではない）'
+              : '無効',
+      };
+    },
     storefrontCheckout: {
-      enabled: runtime.demoCheckout !== null,
+      enabled: runtime.checkout !== null,
       run: async (body, onStep) => {
-        if (!runtime.demoCheckout) {
-          throw new Error('物販デモの mock 決済は無効（NA_X402_MOCK=1 で有効）');
+        if (!runtime.checkout) {
+          throw new Error('物販デモの決済は無効（NA_X402_MOCK=1 または NA_X402_TESTNET=1 で有効）');
         }
         const rawFail = String(body['simulateFailure'] ?? '');
         const simulateFailure =
@@ -79,7 +99,7 @@ function main(): void {
             storefront: runtime.storefront,
             ledger: runtime.ledger,
             identity: runtime.identity,
-            demoCheckout: runtime.demoCheckout,
+            checkout: runtime.checkout,
             // 買い手（払った側）へ押す評判は config 由来。
             settledReputationKind: runtime.commissionConfig.reputation.onSettled.principal as ReputationEventKind,
           },

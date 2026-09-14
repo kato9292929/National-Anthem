@@ -1,7 +1,7 @@
 import type { ReputationEvent, ReputationEventKind, Standing } from '@na/shared';
 import type { IdentityService } from '../identity/service.js';
 import type { PlayerLedger, LedgerState } from '../store/ledger.js';
-import type { CheckoutResult, CheckoutStep, DemoCheckout } from '../x402/demo-checkout.js';
+import type { Checkout, CheckoutResult, CheckoutStep } from '../x402/demo-checkout.js';
 import { GoodsStorefront, type PurchaseReceipt } from './storefront.js';
 
 /**
@@ -20,7 +20,8 @@ export interface StorefrontCheckoutDeps {
   storefront: GoodsStorefront;
   ledger: PlayerLedger;
   identity: IdentityService;
-  demoCheckout: DemoCheckout;
+  /** mock（DemoCheckout）でも実 testnet（TestnetCheckout）でも同じ形で受ける。 */
+  checkout: Checkout;
   /** 買い手（払った側）に押す評判の種別。config 由来。 */
   settledReputationKind: ReputationEventKind;
 }
@@ -65,7 +66,7 @@ export async function runStorefrontCheckout(
     throw new CheckoutError(`手持ち容量を超える: ${before.held}+${quote.quantity} > ${before.capacity}`);
   }
 
-  const result = await deps.demoCheckout.run(
+  const result = await deps.checkout.run(
     {
       resource: input.resource,
       description: `物販の購入: ${quote.label_ja} x${quote.quantity}`,

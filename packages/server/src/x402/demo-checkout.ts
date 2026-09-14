@@ -51,6 +51,16 @@ export interface CheckoutInput {
   simulateFailure?: 'verify' | 'settle';
 }
 
+/**
+ * 決済の実行口。mock（DemoCheckout）でも実 testnet（TestnetCheckout）でも同じ形で使う。
+ * 4 段（challenge / signed / verified / settled）を onStep で流し、結果を返す。
+ */
+export interface Checkout {
+  readonly mode: 'mock' | 'testnet';
+  run(input: CheckoutInput, onStep?: (step: CheckoutStep) => void): Promise<CheckoutResult>;
+  close(): Promise<void>;
+}
+
 export interface DemoCheckoutOptions {
   config: X402Config;
   railId: string;
@@ -59,7 +69,8 @@ export interface DemoCheckoutOptions {
   now?: () => number;
 }
 
-export class DemoCheckout {
+export class DemoCheckout implements Checkout {
+  readonly mode = 'mock' as const;
   private facilitator: MockFacilitator | null = null;
   private client: FacilitatorClient | null = null;
   private feePayerResolver: FeePayerResolver | null = null;

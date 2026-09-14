@@ -149,6 +149,21 @@ export function fetchCommissionBoard(): Promise<CommissionBoardPayload> {
   return getJson<CommissionBoardPayload>('/api/commission/board');
 }
 
+export interface CheckoutStatusPayload {
+  enabled: boolean;
+  mode: 'mock' | 'testnet' | 'disabled';
+  rail: string;
+  network: string | null;
+  testnet: boolean;
+  assetLabel: string | null;
+  explorer: string | null;
+  label: string;
+}
+
+export function fetchCheckoutStatus(): Promise<CheckoutStatusPayload> {
+  return getJson<CheckoutStatusPayload>('/api/checkout/status');
+}
+
 export function fetchSession(): Promise<SessionPayload> {
   return getJson<SessionPayload>('/api/identity/session');
 }

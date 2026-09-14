@@ -35,6 +35,8 @@ export interface HttpOptions {
   storefrontBuy: (body: Record<string, unknown>) => unknown;
   /** 買い手の手持ち（credits / inventory）。session に載せる。 */
   ledgerState: (buyerId: string) => unknown;
+  /** 決済モード（mock / testnet / 無効）。画面のラベルに使う。 */
+  checkoutStatus: () => unknown;
   /**
    * 物販デモの x402 決済フロー（区分A・mock）。
    * 段階ごとの実イベントを onStep で流し、最後に結果を返す。無効なら enabled:false。
@@ -181,6 +183,19 @@ export function createHttpServer(options: HttpOptions) {
         const gate = await guardPayment(req, res, url, '物販の購入');
         if (gate.gated) return;
         sendJson(res, 200, options.storefrontBuy(body), gate.headers);
+        return;
+      }
+
+      case 'GET /api/checkout/status':
+        sendJson(res, 200, options.checkoutStatus());
+        return;
+
+      case 'GET /api/x402/paid-resource': {
+        // testnet 決済の払い先（自分の paywall 資源）。paywall 有効時のみ意味を持つ。
+        // 未払いなら guardPayment が 402 を返す。払い済みなら settle 結果ヘッダ付きで 200。
+        const gate = await guardPayment(req, res, url, '物販デモの testnet 決済');
+        if (gate.gated) return;
+        sendJson(res, 200, { ok: true, resource: url.pathname }, gate.headers);
         return;
       }
 

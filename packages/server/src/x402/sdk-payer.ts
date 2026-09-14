@@ -56,13 +56,19 @@ export function inspectSdkPayer(config: X402Config, env: SdkPayerEnv): SdkPayerS
     else missing.push('NA_SOLANA_PRIVATE_KEY（base58 の 64 byte keypair）');
   }
 
-  const baseRail = config.rails.find((r) => r.id === 'base');
-  if (baseRail?.confirmed) {
-    const circle = env.circleWalletId && env.circleWalletAddress && env.circleApiKey;
-    if (env.evmPrivateKey || circle) rails.push('base');
-    else missing.push('NA_EVM_PRIVATE_KEY または Circle DCW の資格情報一式');
-  } else {
-    missing.push(`rail base が未確定（payTo 未指定）`);
+  // EVM レール（base / base-sepolia など）。確定していて EVM 鍵があれば払える。
+  const evmRails = config.rails.filter((r) => r.chainKind === 'evm');
+  const circle = Boolean(env.circleWalletId && env.circleWalletAddress && env.circleApiKey);
+  let anyEvmConfirmed = false;
+  for (const rail of evmRails) {
+    if (!rail.confirmed) continue;
+    anyEvmConfirmed = true;
+    if (env.evmPrivateKey || circle) rails.push(rail.id);
+  }
+  if (!anyEvmConfirmed) {
+    missing.push('EVM rail が未確定（base / base-sepolia の payTo 未指定など）');
+  } else if (!env.evmPrivateKey && !circle) {
+    missing.push('NA_EVM_PRIVATE_KEY または Circle DCW の資格情報一式');
   }
 
   return {
@@ -87,8 +93,8 @@ export async function createPayingFetch(
   const { wrapFetchWithPayment, x402Client } = await import('@x402/fetch');
   const client = new x402Client();
 
-  if (status.rails.includes('base')) {
-    const baseRail = config.rails.find((r) => r.id === 'base')!;
+  const evmRailIds = config.rails.filter((r) => r.chainKind === 'evm' && status.rails.includes(r.id));
+  if (evmRailIds.length > 0) {
     const { ExactEvmScheme, toClientEvmSigner } = await import('@x402/evm');
     if (!env.evmPrivateKey) {
       // Circle DCW 経由の署名口は、資格情報の扱いを含めて実環境で組む。
@@ -96,8 +102,11 @@ export async function createPayingFetch(
     }
     const { privateKeyToAccount } = await import('viem/accounts');
     const account = privateKeyToAccount(env.evmPrivateKey as `0x${string}`);
+    // 署名の payload と EIP-712 domain は公式 SDK が network から導出する（自前で組まない・推測しない）。
     const scheme = new ExactEvmScheme(toClientEvmSigner(account));
-    client.register(baseRail.network as never, scheme).registerV1(baseRail.networkV1 as never, scheme);
+    for (const rail of evmRailIds) {
+      client.register(rail.network as never, scheme).registerV1(rail.networkV1 as never, scheme);
+    }
   }
 
   if (status.rails.includes('solana')) {

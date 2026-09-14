@@ -48,7 +48,7 @@ function makeFixture(startingCreditsOverride?: number) {
     storefront,
     ledger,
     identity,
-    demoCheckout,
+    checkout: demoCheckout,
     settledReputationKind: commissionConfig.reputation.onSettled.principal as 'payment_settled',
   };
   const itemId = config.stall_categories.imports[0]!.id;

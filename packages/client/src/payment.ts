@@ -1,4 +1,4 @@
-import type { CheckoutResultPayload, CheckoutStepPayload } from './api.js';
+import type { CheckoutResultPayload, CheckoutStepPayload, CheckoutStatusPayload } from './api.js';
 
 /**
  * 決済フローの可視化（この画面の主役）と、購入インタラクションの最小 UI。
@@ -29,6 +29,8 @@ const STEP_ROWS: { id: StepId; label: string }[] = [
 ];
 
 export interface PaymentUi {
+  /** 決済モードを反映する（banner・見出し・段ラベル・tx 表示を mock/testnet で切り替える）。 */
+  setMode(status: CheckoutStatusPayload): void;
   isBuyOpen(): boolean;
   isRunning(): boolean;
   buyTarget(): BuyTarget | null;
@@ -55,7 +57,7 @@ export function createPaymentUi(root: HTMLElement): PaymentUi {
     `
     <div id="mock-banner">mock settlement — 実チェーンではない（区分A・鍵/外部到達なし）</div>
     <section class="panel" id="panel-payment">
-      <h2>x402 決済フロー<span class="dim"> — mock</span> <span id="pay-buyer" class="tag"></span></h2>
+      <h2>x402 決済フロー<span class="dim" id="pay-mode"> — mock</span> <span id="pay-buyer" class="tag"></span></h2>
       <div id="pay-rows">
         ${STEP_ROWS.map(
           (r) => `
@@ -99,12 +101,18 @@ export function createPaymentUi(root: HTMLElement): PaymentUi {
     const detail = root.querySelector<HTMLElement>(`[data-detail="${step}"]`);
     if (detail) detail.textContent = text;
   };
+  const setRowLabel = (step: StepId, text: string): void => {
+    const label = rowFor(step).querySelector<HTMLElement>('.pay-label');
+    if (label) label.textContent = text;
+  };
 
   let buyOpen = false;
   let target: BuyTarget | null = null;
   let running = false;
   let flow: 'idle' | 'running' | 'ok' | 'fail' = 'idle';
   let stepDelay = 240;
+  let mode: 'mock' | 'testnet' | 'disabled' = 'mock';
+  let explorerBase: string | null = null;
 
   // reveal キュー: 実イベントを少しずつ点灯させる（各段の合否は実データ）。
   const queue: CheckoutStepPayload[] = [];
@@ -148,6 +156,27 @@ export function createPaymentUi(root: HTMLElement): PaymentUi {
   };
 
   return {
+    setMode(status) {
+      mode = status.mode;
+      explorerBase = status.explorer;
+      const banner = el('mock-banner');
+      if (status.mode === 'testnet') {
+        // 実 testnet。mainnet と誤認させないため network を明示。tx は実物（mock: を付けない）。
+        banner.textContent = `Base Sepolia testnet — 実 tx（mainnet ではない）${status.network ? ` / ${status.network}` : ''}`;
+        banner.dataset['mode'] = 'testnet';
+        el('pay-mode').textContent = ' — Base Sepolia testnet';
+        setRowLabel('signed', '支払い送信（実 EIP-712 署名）');
+        setRowLabel('settled', '清算（実 tx 着金）');
+      } else if (status.mode === 'mock') {
+        banner.textContent = 'mock settlement — 実チェーンではない（区分A・鍵/外部到達なし）';
+        banner.dataset['mode'] = 'mock';
+        el('pay-mode').textContent = ' — mock';
+      } else {
+        banner.textContent = '決済は無効（NA_X402_MOCK=1 または NA_X402_TESTNET=1 で有効）';
+        banner.dataset['mode'] = 'disabled';
+        el('pay-mode').textContent = ' — 無効';
+      }
+    },
     isBuyOpen: () => buyOpen,
     isRunning: () => running || queue.length > 0 || revealing,
     buyTarget: () => target,
@@ -195,9 +224,14 @@ export function createPaymentUi(root: HTMLElement): PaymentUi {
           }
           if (result.ok && result.receipt && result.ledger) {
             flow = 'ok';
-            const tx = String(result.settlement?.['transaction'] ?? 'mock-tx');
+            const tx = String(result.settlement?.['transaction'] ?? (mode === 'testnet' ? '' : 'mock-tx'));
+            // testnet は実 tx をエクスプローラのリンクで出す（mock: は付けない）。mock はそのまま。
+            const txHtml =
+              mode === 'testnet' && explorerBase && tx !== ''
+                ? `<a href="${escapeHtml(explorerBase + tx)}" target="_blank" rel="noopener" class="mono">${escapeHtml(tx)}</a>`
+                : `<span class="mono">${escapeHtml(tx)}</span>`;
             el('pay-status').innerHTML =
-              `<span class="up">完了</span> — tx <span class="mono">${escapeHtml(tx)}</span> ` +
+              `<span class="up">完了</span> — tx ${txHtml} ` +
               `/ credits ${result.ledger.credits} / 手持ち ${result.ledger.held}/${result.ledger.capacity}` +
               (result.standing ? ` / standing ${result.standing.score}` : '');
           } else if (!result.ok) {
@@ -234,7 +268,10 @@ function detailText(step: CheckoutStepPayload): string {
     case 'challenge':
       return `価格 ${String(step.detail['amount'] ?? '')} / feePayer ${String(step.detail['feePayer'] ?? '—')}`;
     case 'signed':
-      return String(step.detail['signature'] ?? '');
+      // mock は署名文字列、testnet は scheme/network（実署名は SDK 内で作られる）。
+      return step.detail['signature'] !== undefined
+        ? String(step.detail['signature'])
+        : `${String(step.detail['scheme'] ?? 'exact')} / ${String(step.detail['network'] ?? '')}`;
     case 'verified':
       return `payment_valid: ${String(step.detail['payment_valid'])}`;
     case 'settled':
